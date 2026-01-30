@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+
+# Streamlit
+.streamlit/
+
+# Datos (CRÍTICO: No subir datos financieros a GitHub)
+datos/
+*.xlsx
+*.xls
+*.csv
+!validaciones.csv
+
+# Local Settings
+config/settings_local.py
+.env
+
+# OS
+.DS_Store
+Thumbs.db
+.~lock.*
+
+# IDE
+.vscode/
+.idea/
