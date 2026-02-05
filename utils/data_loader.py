@@ -278,43 +278,73 @@ def es_persona_juridica(nif: str) -> bool:
     # (Siguiendo la lógica de la Guía IGAE y los tipos de NIF comunes)
     return first_char.isalpha() and first_char not in ['X', 'Y', 'Z']
 
+def excluir_facturas_borradas(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Excluye las facturas con estado BORRADA del DataFrame.
+    Según la guía IGAE, las facturas borradas no deben tenerse en cuenta
+    en los análisis de auditoría.
+    """
+    if 'estado' in df.columns:
+        return df[df['estado'].astype(str).str.upper() != 'BORRADA'].copy()
+    return df.copy()
+
+
+def agregar_columna_entidad(df: pd.DataFrame, posicion: int = 0) -> pd.DataFrame:
+    """
+    Agrega la columna 'Entidad' como primera columna en el DataFrame.
+    Útil para las tablas de presentación de facturas.
+    """
+    df_con_entidad = df.copy()
+    entidad = CONFIGURACION.get('nombre_entidad', 'Sin especificar')
+
+    # Insertar columna de entidad en la posición indicada
+    df_con_entidad.insert(posicion, 'Entidad', entidad)
+
+    return df_con_entidad
+
+
 def obtener_facturas_papel_sospechosas(df_rcf: pd.DataFrame) -> pd.DataFrame:
     """
     Identifica facturas en papel que podrían incumplir la normativa
     Según Ley 25/2013 y Circular 1/2015 IGAE
+
+    NOTA: Se excluyen facturas BORRADAS según criterios de auditoría
     """
     # Criterios desde configuración
     ejercicio_auditado = CONFIGURACION['ejercicio_auditado']
     importe_minimo = CONFIGURACION['importe_minimo_obligatorio']
     fecha_obligatoriedad = pd.to_datetime(CONFIGURACION['fecha_inicio_obligatoriedad'])
-    
+
     # Verificar columnas necesarias
     columnas_necesarias = ['es_papel', 'fecha_emision', 'base_imponible']
     if not all(col in df_rcf.columns for col in columnas_necesarias):
         return pd.DataFrame()
-    
+
+    # PRIMERO: Excluir facturas BORRADAS (no deben tenerse en cuenta)
+    df_trabajo = excluir_facturas_borradas(df_rcf)
+
     # Filtrar
     condicion = (
-        (df_rcf['es_papel'] == True) &
-        (df_rcf['fecha_emision'] > fecha_obligatoriedad) # Mantener por seguridad normativa general
+        (df_trabajo['es_papel'] == True) &
+        (df_trabajo['fecha_emision'] > fecha_obligatoriedad) # Mantener por seguridad normativa general
     )
-    
+
     # Filtrar por ejercicio si existe la columna o podemos extraerlo de fecha_emision
-    if 'ejercicio' in df_rcf.columns:
+    if 'ejercicio' in df_trabajo.columns:
         # Convertir a numérico y comparar (maneja floats como 2025.0)
-        df_rcf['ejercicio'] = pd.to_numeric(df_rcf['ejercicio'], errors='coerce')
-        condicion &= (df_rcf['ejercicio'] == float(ejercicio_auditado))
+        df_trabajo['ejercicio'] = pd.to_numeric(df_trabajo['ejercicio'], errors='coerce')
+        condicion &= (df_trabajo['ejercicio'] == float(ejercicio_auditado))
     else:
-        condicion &= (df_rcf['fecha_emision'].dt.year == int(ejercicio_auditado))
-        
+        condicion &= (df_trabajo['fecha_emision'].dt.year == int(ejercicio_auditado))
+
     # Filtrar por importe (Base Imponible)
-    condicion &= (df_rcf['base_imponible'] > importe_minimo)
-    
-    df_sospechoso = df_rcf[condicion].copy()
-    
+    condicion &= (df_trabajo['base_imponible'] > importe_minimo)
+
+    df_sospechoso = df_trabajo[condicion].copy()
+
     # Filtrar por tipo de persona (Personas Jurídicas)
-    if 'tipo_persona' in df_rcf.columns:
-        tiene_j = (df_rcf['tipo_persona'] == 'J').any()
+    if 'tipo_persona' in df_sospechoso.columns:
+        tiene_j = (df_sospechoso['tipo_persona'] == 'J').any()
         if tiene_j:
             df_sospechoso = df_sospechoso[df_sospechoso['tipo_persona'] == 'J']
         else:
@@ -322,12 +352,13 @@ def obtener_facturas_papel_sospechosas(df_rcf: pd.DataFrame) -> pd.DataFrame:
             df_sospechoso = df_sospechoso[df_sospechoso['nif_emisor'].apply(es_persona_juridica)]
     else:
         # Si no hay columna de tipo, aplicamos por NIF
-        df_sospechoso = df_sospechoso[df_rcf['nif_emisor'].apply(es_persona_juridica)]
-    
-    # Filtrar por estado si existe la columna
-    if 'estado' in df_rcf.columns:
-        df_sospechoso = df_sospechoso[~df_sospechoso['estado'].isin(['RECHAZADA', 'ANULADA'])]
-    
+        if 'nif_emisor' in df_sospechoso.columns:
+            df_sospechoso = df_sospechoso[df_sospechoso['nif_emisor'].apply(es_persona_juridica)]
+
+    # Filtrar por estado: excluir RECHAZADA y ANULADA (además de BORRADA ya excluida)
+    if 'estado' in df_sospechoso.columns:
+        df_sospechoso = df_sospechoso[~df_sospechoso['estado'].astype(str).str.upper().isin(['RECHAZADA', 'ANULADA'])]
+
     return df_sospechoso
 
 def calcular_tiempos_anotacion(df_rcf: pd.DataFrame, df_face: pd.DataFrame) -> pd.DataFrame:

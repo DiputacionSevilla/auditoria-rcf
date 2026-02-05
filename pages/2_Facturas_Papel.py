@@ -13,7 +13,13 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 from config.settings import COLORES, COLORES_GRAFICOS, CONFIGURACION
-from utils.data_loader import obtener_facturas_papel_sospechosas, exportar_a_excel, es_persona_juridica
+from utils.data_loader import (
+    obtener_facturas_papel_sospechosas,
+    exportar_a_excel,
+    es_persona_juridica,
+    excluir_facturas_borradas,
+    agregar_columna_entidad
+)
 
 st.set_page_config(
     page_title="Facturas en Papel - Auditoría RCF",
