@@ -48,7 +48,8 @@ Resolver las discrepancias en el conteo de facturas del Dashboard y mejorar la t
 ## 📋 Mantenimiento Realizado
 - **Resolución de avisos de Streamlit**: Se han corregido todos los avisos de "deprecation" reemplazando `use_container_width=True` por `width="stretch"` en todos los componentes.
 - **Corrección de Colores**: Se han unificado los colores de los gráficos en el Dashboard.
-- **Unificación de Criterios (Papel)**: Se ha corregido una discrepancia en el conteo de facturas sospechosas entre el Dashboard y la página de detalle. El Dashboard incluía erróneamente facturas Rechazadas/Anuladas que no deben contarse como irregularidades.
+- **Unificación de Criterios (Papel)**: Se ha corregido una discrepancia en el conteo de facturas sospechosas.
+- **Corrección Flujo de Estados**: Se arregló el mapeo de estados en Tramitación, mostrando ahora los nombres correctos (ej: "Registrada") en lugar de "Desconocido".
 
 ## 📋 Pendientes para Próximas Sesiones
 - [ ] Validar la consistencia final de los informes descargables (Excel) con las nuevas columnas.

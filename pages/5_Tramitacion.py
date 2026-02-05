@@ -188,8 +188,8 @@ def main():
     st.markdown("### ⏱️ Tiempos Medios por Estado")
     
     if len(df_estados) > 0:
-        # Convertir códigos de estado a nombres
-        df_estados['nombre_estado'] = df_estados['codigo'].map(ESTADOS_FACTURAS).fillna('Desconocido')
+        # Convertir códigos de estado a nombres (asegurando tipo string y sin decimales)
+        df_estados['nombre_estado'] = df_estados['codigo'].astype(str).str.split('.').str[0].map(ESTADOS_FACTURAS).fillna('Desconocido')
         
         # Calcular tiempo desde registro hasta cada estado
         # Agrupamos por registro y código de estado
