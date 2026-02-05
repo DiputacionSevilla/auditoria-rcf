@@ -400,12 +400,46 @@ def main():
     # Guardar análisis en session_state
     if 'analisis' not in st.session_state:
         st.session_state['analisis'] = {}
-    
+
+    # Preparar datos completos para el informe
+    distribucion_estados_informe = pd.DataFrame()
+    tiempos_estado_informe = pd.DataFrame()
+    secuencias_informe = pd.DataFrame()
+    anulaciones_informe = pd.DataFrame()
+
+    if 'estado' in df_rcf.columns:
+        distribucion_estados = df_rcf['estado'].value_counts()
+        distribucion_estados_informe = distribucion_estados.head(10).reset_index()
+        distribucion_estados_informe.columns = ['Estado', 'Cantidad']
+        distribucion_estados_informe['Porcentaje'] = (distribucion_estados_informe['Cantidad'] / len(df_rcf) * 100).round(2)
+
+    if len(df_estados) > 0 and 'tiempos_por_estado' in dir():
+        tiempos_estado_informe = tiempos_por_estado.reset_index()
+
+    if len(df_estados) > 0 and 'df_secuencias_display' in dir():
+        secuencias_informe = df_secuencias_display.copy()
+
+    if len(df_anulaciones_rcf) > 0:
+        anulaciones_informe = df_anulaciones_rcf[[
+            'registro', 'numero_factura', 'nif_emisor', 'razon_social',
+            'importe_total', 'fecha_solicitud_anulacion', 'estado'
+        ]].copy()
+        anulaciones_informe.columns = [
+            'Registro FACe', 'Nº Factura', 'NIF', 'Razón Social',
+            'Importe', 'Fecha Solicitud', 'Estado Actual'
+        ]
+
     st.session_state['analisis']['tramitacion'] = {
         'total_anulaciones': total_anulaciones,
         'anulaciones_aceptadas': anuladas,
+        'anulaciones_con_comentario': con_comentario if 'comentario' in df_anulaciones.columns else 0,
         'facturas_pagadas': total_pagadas,
-        'importe_pagado': facturas_pagadas['importe_total'].sum() if len(facturas_pagadas) > 0 else 0
+        'importe_pagado': facturas_pagadas['importe_total'].sum() if len(facturas_pagadas) > 0 else 0,
+        'facturas_contabilizadas': len(facturas_contabilizadas),
+        'distribucion_estados': distribucion_estados_informe,
+        'tiempos_por_estado': tiempos_estado_informe,
+        'secuencias_estados': secuencias_informe,
+        'detalle_anulaciones': anulaciones_informe
     }
 
 if __name__ == "__main__":

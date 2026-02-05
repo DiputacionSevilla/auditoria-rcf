@@ -374,11 +374,69 @@ def main():
     # Guardar análisis en session_state
     if 'analisis' not in st.session_state:
         st.session_state['analisis'] = {}
-    
+
+    # Preparar datos completos para el informe
+    df_pendientes_informe = pd.DataFrame()
+    ranking_oc_pendientes_informe = pd.DataFrame()
+    ranking_ut_pendientes_informe = pd.DataFrame()
+    distribucion_antiguedad_informe = pd.DataFrame()
+    morosidad_informe = {}
+
+    if len(facturas_pendientes_3m) > 0:
+        # Detalle facturas pendientes
+        df_pendientes_informe = facturas_pendientes_3m[[
+            'entidad', 'id_fra_rcf', 'numero_factura', 'fecha_anotacion_rcf',
+            'dias_pendiente', 'nif_emisor', 'razon_social', 'importe_total',
+            'estado', 'codigo_oc'
+        ]].copy()
+        df_pendientes_informe.columns = [
+            'Entidad', 'ID RCF', 'Nº Factura', 'Fecha Anotación', 'Días Pendiente',
+            'NIF', 'Razón Social', 'Importe', 'Estado', 'OC'
+        ]
+
+        # Ranking OC pendientes
+        if 'codigo_oc' in facturas_pendientes_3m.columns:
+            ranking_oc_pendientes_informe = facturas_pendientes_3m.groupby('codigo_oc').agg({
+                'importe_total': 'sum',
+                'id_fra_rcf': 'count',
+                'dias_pendiente': 'mean'
+            }).round(2).reset_index()
+            ranking_oc_pendientes_informe.columns = ['Código OC', 'Importe Total', 'Nº Facturas', 'Días Medio']
+            ranking_oc_pendientes_informe = ranking_oc_pendientes_informe.sort_values('Importe Total', ascending=False).head(10)
+
+        # Ranking UT pendientes
+        if 'codigo_ut' in facturas_pendientes_3m.columns:
+            ranking_ut_pendientes_informe = facturas_pendientes_3m.groupby('codigo_ut').agg({
+                'importe_total': 'sum',
+                'id_fra_rcf': 'count',
+                'dias_pendiente': 'mean'
+            }).round(2).reset_index()
+            ranking_ut_pendientes_informe.columns = ['Código UT', 'Importe Total', 'Nº Facturas', 'Días Medio']
+            ranking_ut_pendientes_informe = ranking_ut_pendientes_informe.sort_values('Importe Total', ascending=False).head(10)
+
+        # Distribución por antigüedad
+        if 'rango_dias' in facturas_pendientes_3m.columns:
+            distribucion_antiguedad_informe = facturas_pendientes_3m['rango_dias'].value_counts().sort_index().reset_index()
+            distribucion_antiguedad_informe.columns = ['Rango', 'Cantidad']
+
+    # Datos de morosidad
+    if 'facturas_retraso' in dir() and len(facturas_retraso) > 0:
+        morosidad_informe = {
+            'total_con_retraso': len(facturas_retraso),
+            'dias_retraso_medio': facturas_retraso['dias_pago'].mean(),
+            'dias_retraso_max': facturas_retraso['dias_pago'].max()
+        }
+
     st.session_state['analisis']['obligaciones'] = {
         'facturas_3_meses': len(facturas_pendientes_3m),
         'importe_pendiente': facturas_pendientes_3m['importe_total'].sum() if len(facturas_pendientes_3m) > 0 else 0,
-        'dias_medio_pendiente': facturas_pendientes_3m['dias_pendiente'].mean() if len(facturas_pendientes_3m) > 0 else 0
+        'dias_medio_pendiente': facturas_pendientes_3m['dias_pendiente'].mean() if len(facturas_pendientes_3m) > 0 else 0,
+        'dias_max_pendiente': facturas_pendientes_3m['dias_pendiente'].max() if len(facturas_pendientes_3m) > 0 else 0,
+        'detalle_pendientes': df_pendientes_informe,
+        'ranking_oc_pendientes': ranking_oc_pendientes_informe,
+        'ranking_ut_pendientes': ranking_ut_pendientes_informe,
+        'distribucion_antiguedad': distribucion_antiguedad_informe,
+        'morosidad': morosidad_informe
     }
 
 if __name__ == "__main__":

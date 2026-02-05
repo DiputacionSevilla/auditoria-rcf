@@ -410,12 +410,79 @@ def main():
     # Guardar análisis en session_state
     if 'analisis' not in st.session_state:
         st.session_state['analisis'] = {}
-    
+
+    # Preparar datos completos para el informe
+    df_retenidas_informe = pd.DataFrame()
+    top_demoras_informe = pd.DataFrame()
+    ranking_oc_tiempos_informe = pd.DataFrame()
+    ranking_ut_tiempos_informe = pd.DataFrame()
+    stats_mensuales_informe = pd.DataFrame()
+
+    if len(df_retenidas) > 0:
+        df_retenidas_informe = df_retenidas[[
+            'registro', 'nif_emisor', 'nombre', 'numero',
+            'importe', 'fecha_registro', 'oc'
+        ]].copy()
+        df_retenidas_informe.columns = [
+            'Registro FACe', 'NIF', 'Proveedor', 'Nº Factura',
+            'Importe', 'Fecha Registro', 'OC'
+        ]
+
+    if len(df_tiempos) > 0:
+        # Top demoras
+        top_demoras_informe = df_tiempos.nlargest(10, 'tiempo_anotacion_min')[[
+            'entidad', 'id_fra_rcf', 'numero_factura', 'nif_emisor', 'razon_social',
+            'tiempo_anotacion_min', 'codigo_og'
+        ]].copy()
+        top_demoras_informe.columns = [
+            'Entidad', 'ID RCF', 'Nº Factura', 'NIF', 'Razón Social',
+            'Tiempo (min)', 'OG'
+        ]
+        top_demoras_informe['Tiempo (horas)'] = top_demoras_informe['Tiempo (min)'] / 60
+
+        # Stats mensuales
+        df_tiempos['mes'] = pd.to_datetime(df_tiempos['fecha_anotacion_rcf']).dt.to_period('M').astype(str)
+        stats_mensuales_informe = df_tiempos.groupby('mes')['tiempo_anotacion_min'].agg([
+            'mean', 'median', 'min', 'max', 'count'
+        ]).reset_index()
+        stats_mensuales_informe.columns = ['Mes', 'Media', 'Mediana', 'Mínimo', 'Máximo', 'Nº Facturas']
+
+        # Ranking OC por tiempos
+        if 'codigo_oc' in df_tiempos.columns:
+            media_global = df_tiempos['tiempo_anotacion_min'].mean()
+            ranking_oc_tiempos_informe = df_tiempos.groupby('codigo_oc').agg({
+                'tiempo_anotacion_min': 'mean',
+                'id_fra_rcf': 'count'
+            }).round(2).reset_index()
+            ranking_oc_tiempos_informe.columns = ['Código OC', 'Tiempo Medio (min)', 'Nº Facturas']
+            ranking_oc_tiempos_informe['Diferencia vs Media (%)'] = (
+                (ranking_oc_tiempos_informe['Tiempo Medio (min)'] - media_global) / media_global * 100
+            ).round(2)
+            ranking_oc_tiempos_informe = ranking_oc_tiempos_informe.sort_values('Tiempo Medio (min)', ascending=False).head(10)
+
+        # Ranking UT por tiempos
+        if 'codigo_ut' in df_tiempos.columns:
+            ranking_ut_tiempos_informe = df_tiempos.groupby('codigo_ut').agg({
+                'tiempo_anotacion_min': 'mean',
+                'id_fra_rcf': 'count'
+            }).round(2).reset_index()
+            ranking_ut_tiempos_informe.columns = ['Código UT', 'Tiempo Medio (min)', 'Nº Facturas']
+            ranking_ut_tiempos_informe['Diferencia vs Media (%)'] = (
+                (ranking_ut_tiempos_informe['Tiempo Medio (min)'] - media_global) / media_global * 100
+            ).round(2)
+            ranking_ut_tiempos_informe = ranking_ut_tiempos_informe.sort_values('Tiempo Medio (min)', ascending=False).head(10)
+
     st.session_state['analisis']['anotacion'] = {
         'facturas_retenidas': len(df_retenidas),
+        'df_retenidas': df_retenidas_informe,
         'tiempo_medio_min': df_tiempos['tiempo_anotacion_min'].mean() if len(df_tiempos) > 0 else 0,
+        'tiempo_mediano_min': df_tiempos['tiempo_anotacion_min'].median() if len(df_tiempos) > 0 else 0,
         'tiempo_max_min': df_tiempos['tiempo_anotacion_min'].max() if len(df_tiempos) > 0 else 0,
-        'stats_mensuales': stats_mensuales if len(df_tiempos) > 0 else pd.DataFrame()
+        'tiempo_min_min': df_tiempos['tiempo_anotacion_min'].min() if len(df_tiempos) > 0 else 0,
+        'top_demoras': top_demoras_informe,
+        'stats_mensuales': stats_mensuales_informe,
+        'ranking_oc_tiempos': ranking_oc_tiempos_informe,
+        'ranking_ut_tiempos': ranking_ut_tiempos_informe
     }
 
 if __name__ == "__main__":

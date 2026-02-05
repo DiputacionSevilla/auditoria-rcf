@@ -364,13 +364,49 @@ def main():
     # Guardar análisis en session_state para el informe
     if 'analisis' not in st.session_state:
         st.session_state['analisis'] = {}
-    
+
+    # Preparar datos completos para el informe
+    top_proveedores_informe = pd.DataFrame()
+    ranking_oc_informe = pd.DataFrame()
+    ranking_ut_informe = pd.DataFrame()
+
+    if len(facturas_sospechosas) > 0:
+        # Top proveedores
+        top_proveedores_informe = facturas_sospechosas.groupby(['nif_emisor', 'razon_social']).agg({
+            'id_fra_rcf': 'count',
+            'base_imponible': 'sum'
+        }).reset_index()
+        top_proveedores_informe.columns = ['NIF', 'Razón Social', 'Nº Facturas', 'BI Acumulada']
+        top_proveedores_informe = top_proveedores_informe.sort_values('BI Acumulada', ascending=False).head(10)
+
+        # Ranking OC
+        if 'codigo_oc' in facturas_sospechosas.columns:
+            ranking_oc_informe = facturas_sospechosas.groupby('codigo_oc').agg({
+                'base_imponible': 'sum',
+                'id_fra_rcf': 'count'
+            }).sort_values('base_imponible', ascending=False).head(10).reset_index()
+            ranking_oc_informe.columns = ['Código OC', 'BI Total', 'Nº Facturas']
+
+        # Ranking UT
+        if 'codigo_ut' in facturas_sospechosas.columns:
+            ranking_ut_informe = facturas_sospechosas.groupby('codigo_ut').agg({
+                'base_imponible': 'sum',
+                'id_fra_rcf': 'count'
+            }).sort_values('base_imponible', ascending=False).head(10).reset_index()
+            ranking_ut_informe.columns = ['Código UT', 'BI Total', 'Nº Facturas']
+
     st.session_state['analisis']['facturas_papel'] = {
         'total_papel': len(facturas_papel),
         'total_sospechosas': len(facturas_sospechosas),
         'importe_sospechoso': facturas_sospechosas['base_imponible'].sum() if len(facturas_sospechosas) > 0 else 0,
         'top_10_importe': top_10 if len(facturas_sospechosas) > 0 else pd.DataFrame(),
-        'evolucion_mensual': evolucion if len(facturas_sospechosas) > 0 else pd.DataFrame()
+        'top_proveedores': top_proveedores_informe,
+        'ranking_oc': ranking_oc_informe,
+        'ranking_ut': ranking_ut_informe,
+        'evolucion_mensual': evolucion if len(facturas_sospechosas) > 0 else pd.DataFrame(),
+        'facturas_sospechosas': facturas_sospechosas[['entidad', 'id_fra_rcf', 'numero_factura', 'fecha_emision',
+                                                       'nif_emisor', 'razon_social', 'base_imponible', 'importe_total',
+                                                       'codigo_oc']].copy() if len(facturas_sospechosas) > 0 else pd.DataFrame()
     }
 
 if __name__ == "__main__":
