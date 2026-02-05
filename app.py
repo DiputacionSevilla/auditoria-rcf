@@ -21,11 +21,9 @@ st.set_page_config(
 # CSS personalizado
 st.markdown(f"""
     <style>
-    .main {{
-        background-color: {COLORES['fondo']};
-    }}
+    /* El fondo se maneja automáticamente por el tema de Streamlit */
     .stMetric {{
-        background-color: {COLORES['card']};
+        background-color: rgba(128, 128, 128, 0.1);
         padding: 15px;
         border-radius: 10px;
         border-left: 5px solid {COLORES['primario']};
@@ -37,7 +35,7 @@ st.markdown(f"""
         color: {COLORES['secundario']};
     }}
     .upload-info {{
-        background-color: {COLORES['info']};
+        background-color: rgba(23, 162, 184, 0.1);
         padding: 10px;
         border-radius: 5px;
         border-left: 4px solid {COLORES['primario']};
@@ -109,10 +107,10 @@ def main():
     col_btn1, col_btn2 = st.sidebar.columns(2)
     
     with col_btn1:
-        btn_procesar = st.button("🔄 Procesar Datos", type="primary", use_container_width=True, disabled=not todos_disponibles)
+        btn_procesar = st.button("🔄 Procesar Datos", type="primary", width="stretch", disabled=not todos_disponibles)
     
     with col_btn2:
-        if st.button("🗑️ Inicializar", use_container_width=True, help="Limpia los datos cargados en memoria y vuelve al estado inicial"):
+        if st.button("🗑️ Inicializar", width="stretch", help="Limpia los datos cargados en memoria y vuelve al estado inicial"):
             for key in ['datos', 'validacion', 'datos_procesados']:
                 if key in st.session_state:
                     del st.session_state[key]
@@ -208,35 +206,37 @@ def mostrar_resumen_ejecutivo():
     with col1:
         total_facturas = len(datos['rcf'])
         st.metric(
-            "Total Facturas",
+            "Total Registros RCF",
             f"{total_facturas:,}",
-            help="Facturas totales en el RCF"
+            help="Total de registros cargados en el RCF (incluidos borrados)"
         )
     
     with col2:
-        facturas_papel = len(datos['rcf'][datos['rcf']['es_papel'] == True])
-        porcentaje_papel = (facturas_papel / total_facturas * 100) if total_facturas > 0 else 0
+        df_vivas_global = datos['rcf'][datos['rcf']['estado'].astype(str).str.upper() != 'BORRADA']
+        total_vivas = len(df_vivas_global)
         st.metric(
-            "Facturas en Papel",
-            f"{facturas_papel:,}",
-            f"{porcentaje_papel:.1f}%"
+            "Facturas Vivas",
+            f"{total_vivas:,}",
+            help="Facturas para análisis (excluyendo estado BORRADA)"
         )
-    
+        
     with col3:
-        facturas_electronicas = len(datos['rcf'][datos['rcf']['es_papel'] == False])
-        porcentaje_elect = (facturas_electronicas / total_facturas * 100) if total_facturas > 0 else 0
+        # Borradas
+        total_borradas = total_facturas - total_vivas
+        porcentaje_borradas = (total_borradas / total_facturas * 100) if total_facturas > 0 else 0
         st.metric(
-            "Facturas Electrónicas",
-            f"{facturas_electronicas:,}",
-            f"{porcentaje_elect:.1f}%"
+            "Facturas Borradas",
+            f"{total_borradas:,}",
+            f"{porcentaje_borradas:.1f}%",
+            delta_color="inverse"
         )
     
     with col4:
         anulaciones = len(datos['anulaciones'])
         st.metric(
-            "Anulaciones",
+            "Anulaciones (FACe)",
             f"{anulaciones:,}",
-            help="Solicitudes de anulación"
+            help="Solicitudes de anulación registradas en el archivo de Anulaciones"
         )
     
     st.markdown("---")
@@ -281,19 +281,19 @@ def mostrar_resumen_ejecutivo():
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        if st.button("📊 Dashboard", use_container_width=True):
+        if st.button("📊 Dashboard", width="stretch"):
             st.switch_page("pages/1_Dashboard.py")
     
     with col2:
-        if st.button("📄 Facturas Papel", use_container_width=True):
+        if st.button("📄 Facturas Papel", width="stretch"):
             st.switch_page("pages/2_Facturas_Papel.py")
     
     with col3:
-        if st.button("⏱️ Anotación RCF", use_container_width=True):
+        if st.button("⏱️ Anotación RCF", width="stretch"):
             st.switch_page("pages/3_Anotacion_RCF.py")
     
     with col4:
-        if st.button("📑 Generar Informe", use_container_width=True):
+        if st.button("📑 Generar Informe", width="stretch"):
             st.switch_page("pages/7_Generar_Informe.py")
     
     # Footer

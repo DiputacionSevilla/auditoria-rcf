@@ -124,12 +124,13 @@ def main():
         facturas_pendientes_3m = facturas_pendientes_3m.sort_values('dias_pendiente', ascending=False)
         
         df_pendientes_display = facturas_pendientes_3m[[
-            'numero_factura', 'fecha_anotacion_rcf', 'dias_pendiente',
-            'nif_emisor', 'razon_social', 'importe_total', 'estado', 'codigo_oc'
+            'entidad', 'id_fra_rcf', 'numero_factura', 'fecha_anotacion_rcf', 
+            'dias_pendiente', 'nif_emisor', 'razon_social', 'importe_total', 
+            'estado', 'codigo_oc'
         ]].copy()
         
         df_pendientes_display.columns = [
-            'Nº Factura', 'Fecha Anotación', 'Días Pendiente',
+            'Entidad', 'ID RCF', 'Nº Factura', 'Fecha Anotación', 'Días Pendiente',
             'NIF', 'Razón Social', 'Importe', 'Estado', 'OC'
         ]
         
@@ -139,7 +140,7 @@ def main():
                 'Días Pendiente': '{:.0f}',
                 'Importe': '{:,.2f} €'
             }).background_gradient(subset=['Días Pendiente'], cmap='Reds'),
-            use_container_width=True,
+            width="stretch",
             hide_index=True
         )
         
@@ -165,7 +166,7 @@ def main():
         )
         
         fig.update_layout(showlegend=False, height=400)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
         
         # Exportar
         if st.button("📥 Exportar Facturas Pendientes >3 Meses"):
@@ -193,7 +194,7 @@ def main():
             if 'codigo_oc' in facturas_pendientes_3m.columns:
                 ranking_oc = facturas_pendientes_3m.groupby('codigo_oc').agg({
                     'importe_total': 'sum',
-                    'ID_RCF': 'count',
+                    'id_fra_rcf': 'count',
                     'dias_pendiente': 'mean'
                 }).round(2)
                 
@@ -206,7 +207,7 @@ def main():
                         'Nº Facturas': '{:,.0f}',
                         'Días Medio': '{:.0f}'
                     }).background_gradient(subset=['Importe Total'], cmap='Oranges'),
-                    use_container_width=True
+                    width="stretch"
                 )
                 
                 # Gráfico
@@ -221,7 +222,7 @@ def main():
                 )
                 
                 fig.update_layout(showlegend=False, height=400)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
         
         with col2:
             st.markdown("#### Top 10 Unidades Tramitadoras")
@@ -229,7 +230,7 @@ def main():
             if 'codigo_ut' in facturas_pendientes_3m.columns:
                 ranking_ut = facturas_pendientes_3m.groupby('codigo_ut').agg({
                     'importe_total': 'sum',
-                    'ID_RCF': 'count',
+                    'id_fra_rcf': 'count',
                     'dias_pendiente': 'mean'
                 }).round(2)
                 
@@ -242,7 +243,7 @@ def main():
                         'Nº Facturas': '{:,.0f}',
                         'Días Medio': '{:.0f}'
                     }).background_gradient(subset=['Importe Total'], cmap='Purples'),
-                    use_container_width=True
+                    width="stretch"
                 )
                 
                 # Gráfico
@@ -257,7 +258,7 @@ def main():
                 )
                 
                 fig.update_layout(showlegend=False, height=400)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
     
     st.markdown("---")
     
@@ -266,15 +267,15 @@ def main():
     st.info("Facturas que superan los plazos legales de pago (30 días)")
     
     # Facturas pagadas con retraso
-    if 'fecha_emision' in df_rcf.columns and 'fecha_pago' in df_rcf.columns:
+    if 'fecha_anotacion_rcf' in df_rcf.columns and 'fecha_pago' in df_rcf.columns:
         facturas_pagadas = df_rcf[df_rcf['estado'] == 'PAGADA'].copy()
         
         if len(facturas_pagadas) > 0:
-            facturas_pagadas['fecha_emision'] = pd.to_datetime(facturas_pagadas['fecha_emision'])
+            facturas_pagadas['fecha_anotacion_rcf'] = pd.to_datetime(facturas_pagadas['fecha_anotacion_rcf'])
             facturas_pagadas['fecha_pago'] = pd.to_datetime(facturas_pagadas['fecha_pago'])
             
             facturas_pagadas['dias_pago'] = (
-                facturas_pagadas['fecha_pago'] - facturas_pagadas['fecha_emision']
+                facturas_pagadas['fecha_pago'] - facturas_pagadas['fecha_anotacion_rcf']
             ).dt.days
             
             # Facturas con retraso (>30 días)
@@ -320,7 +321,7 @@ def main():
                 fig.add_vline(x=30, line_dash="dash", line_color="red", annotation_text="Plazo legal (30 días)")
                 
                 fig.update_layout(height=400)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
     else:
         st.warning("No hay datos suficientes de fechas de pago para analizar morosidad")
     
@@ -346,7 +347,7 @@ def main():
     col1, col2 = st.columns(2)
     
     with col1:
-        if st.button("📥 Exportar Ranking Unidades", use_container_width=True):
+        if st.button("📥 Exportar Ranking Unidades", width="stretch"):
             if len(facturas_pendientes_3m) > 0 and 'codigo_oc' in facturas_pendientes_3m.columns:
                 excel_bytes = exportar_a_excel(
                     ranking_oc.reset_index(),
@@ -360,7 +361,7 @@ def main():
                 )
     
     with col2:
-        if st.button("📥 Exportar Análisis Morosidad", use_container_width=True):
+        if st.button("📥 Exportar Análisis Morosidad", width="stretch"):
             if 'facturas_retraso' in locals() and len(facturas_retraso) > 0:
                 excel_bytes = exportar_a_excel(facturas_retraso, "Analisis_Morosidad")
                 st.download_button(

@@ -127,7 +127,7 @@ def main():
                 lambda x: ['background-color: #d4edda' if v == 'ANULADA' else '' for v in x],
                 subset=['Estado Actual']
             ),
-            use_container_width=True,
+            width="stretch",
             hide_index=True
         )
         
@@ -166,7 +166,7 @@ def main():
             fig.update_traces(textposition='inside', textinfo='percent+label')
             fig.update_layout(height=400)
             
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
     
     with col2:
         st.markdown("#### Top 10 Estados")
@@ -180,7 +180,7 @@ def main():
                 'Cantidad': '{:,.0f}',
                 'Porcentaje': '{:.2f}%'
             }).background_gradient(subset=['Cantidad'], cmap='Blues'),
-            use_container_width=True,
+            width="stretch",
             hide_index=True
         )
     
@@ -234,7 +234,7 @@ def main():
             height=400
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
         
         # Tabla de tiempos
         st.markdown("#### 📊 Tabla Detallada de Tiempos")
@@ -247,7 +247,7 @@ def main():
                 'Máximo (h)': '{:.2f}',
                 'Nº Cambios': '{:,.0f}'
             }).background_gradient(subset=['Media (h)'], cmap='YlOrRd'),
-            use_container_width=True
+            width="stretch"
         )
         
         # Exportar tiempos
@@ -288,7 +288,7 @@ def main():
                 'Cantidad de Facturas': '{:,.0f}',
                 'Porcentaje': '{:.2f}%'
             }).background_gradient(subset=['Cantidad de Facturas'], cmap='Greens'),
-            use_container_width=True,
+            width="stretch",
             hide_index=True
         )
     
@@ -355,7 +355,7 @@ def main():
         )
         
         fig.update_layout(height=400)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     
     st.markdown("---")
     
@@ -365,7 +365,7 @@ def main():
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("📥 Exportar Facturas Pagadas", use_container_width=True):
+        if st.button("📥 Exportar Facturas Pagadas", width="stretch"):
             if len(facturas_pagadas) > 0:
                 excel_bytes = exportar_a_excel(facturas_pagadas, "Facturas_Pagadas")
                 st.download_button(
@@ -376,7 +376,7 @@ def main():
                 )
     
     with col2:
-        if st.button("📥 Exportar Distribución Estados", use_container_width=True):
+        if st.button("📥 Exportar Distribución Estados", width="stretch"):
             if 'estado' in df_rcf.columns:
                 excel_bytes = exportar_a_excel(df_estados_table, "Distribucion_Estados")
                 st.download_button(
@@ -387,7 +387,7 @@ def main():
                 )
     
     with col3:
-        if st.button("📥 Exportar Secuencias Estados", use_container_width=True):
+        if st.button("📥 Exportar Secuencias Estados", width="stretch"):
             if len(df_estados) > 0:
                 excel_bytes = exportar_a_excel(df_secuencias_display, "Secuencias_Estados")
                 st.download_button(

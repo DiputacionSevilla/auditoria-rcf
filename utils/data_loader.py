@@ -11,10 +11,11 @@ from config.settings import CONFIGURACION
 # Mapeo flexible de nombres de columnas
 MAPEO_COLUMNAS = {
     'rcf': {
-        'ID_RCF': ['ID_RCF', 'id_rcf', 'id', 'ID', 'ID_FRA_RCF'],
+        'id_fra_rcf': ['id_fra_rcf', 'ID_FRA_RCF', 'ID_RCF', 'id_rcf', 'ID'],
+        'entidad': ['entidad', 'ENTIDAD', 'Entidad'],
         'ID_FACE': ['ID_FACE', 'id_face', 'ID FACE', 'Nº Registro FACe', 'registro_face'],
         'fecha_emision': ['fecha_emision', 'fecha_expedicion', 'Fecha', 'fecha', 'Fecha Expedición', 'FECHA EXP. FRA.'],
-        'fecha_anotacion_rcf': ['fecha_anotacion_rcf', 'fecha_anotacion', 'Fecha Anotación', 'fecha_registro', 'FECHA REGISTRO', 'F. DE GRABACIÓN DE LA OPER.'],
+        'fecha_anotacion_rcf': ['Fecha registro', 'fecha_anotacion_rcf', 'fecha_anotacion', 'Fecha Anotación', 'fecha_registro', 'FECHA REGISTRO', 'F. DE GRABACIÓN DE LA OPER.'],
         'nif_emisor': ['nif_emisor', 'NIF', 'nif', 'CIF', 'cif', 'NIF Emisor', 'NIF/CIF'],
         'razon_social': ['razon_social', 'nombre', 'Razón Social', 'Nombre', 'proveedor', 'NOMBRE/RAZÓN SOCIAL'],
         'numero_factura': ['numero_factura', 'numero', 'Número', 'Nº Factura', 'num_factura', 'N_FRA'],
@@ -129,6 +130,7 @@ def cargar_datos(archivo_rcf, archivo_face, archivo_anulaciones, archivo_estados
             df_rcf['es_papel'] = (df_rcf['ID_FACE'] == '') | (df_rcf['ID_FACE'].str.lower() == 'nan')
         else:
             df_rcf['es_papel'] = True  # Asumir papel si no hay columna ID_FACE
+            df_rcf['ID_FACE'] = ''
 
         # EXCLUIR FACTURAS BORRADAS (Global desactivado - se hará por página)
         if 'estado' in df_rcf.columns:
@@ -151,24 +153,56 @@ def cargar_datos(archivo_rcf, archivo_face, archivo_anulaciones, archivo_estados
         if 'importe' in df_face.columns:
             df_face['importe'] = pd.to_numeric(df_face['importe'], errors='coerce')
         
-        if 'ID_RCF' not in df_rcf.columns:
-            df_rcf['ID_RCF'] = range(1, len(df_rcf) + 1)
+        if 'id_fra_rcf' not in df_rcf.columns:
+            df_rcf['id_fra_rcf'] = range(1, len(df_rcf) + 1)
         
-        # FILTRAR POR EJERCICIO AUDITADO (Global)
-        ejercicio_auditado = CONFIGURACION.get('ejercicio_auditado')
+        # FILTRAR POR EJERCICIO AUDITADO (Global) - Basado en Fecha de Registro en RCF
+        import toml
+        try:
+            config_toml = toml.load(str(Path(__file__).parent.parent / ".streamlit" / "config.toml"))
+            ejercicio_auditado = config_toml.get('auditoria', {}).get('ejercicio_auditado')
+        except:
+            ejercicio_auditado = CONFIGURACION.get('ejercicio_auditado')
+            
         if ejercicio_auditado:
-            col_ejercicio = 'ejercicio' if 'ejercicio' in df_rcf.columns else None
-            if col_ejercicio:
-                df_rcf[col_ejercicio] = pd.to_numeric(df_rcf[col_ejercicio], errors='coerce')
-                df_rcf = df_rcf[df_rcf[col_ejercicio] == float(ejercicio_auditado)].copy()
+            # Mantener una copia de IDs de FACe antes de filtrar por año para el cálculo de retenidas
+            # Esto evita que facturas sin fecha (como las 'BORRADA') aparezcan como retenidas si ya están en RCF
+            ids_face_en_rcf_total = set(df_rcf[df_rcf['ID_FACE'].notna()]['ID_FACE'].astype(str))
+            
+            # Priorizamos filtrar por la columna 'ejercicio' (Año) si existe,
+            # ya que suele estar más completa que las fechas individuales.
+            if 'ejercicio' in df_rcf.columns:
+                df_rcf['ejercicio'] = pd.to_numeric(df_rcf['ejercicio'], errors='coerce')
+                # Incluir el año auditado y el anterior (según feedback del usuario)
+                anios_permitidos = [float(ejercicio_auditado), float(ejercicio_auditado) - 1]
+                df_rcf = df_rcf[df_rcf['ejercicio'].isin(anios_permitidos)].copy()
+            elif 'fecha_anotacion_rcf' in df_rcf.columns:
+                # Si filtramos por fecha, incluimos las de 2025 (incluyendo aquellas de 2024 registradas en 2025)
+                # pero mantenemos la prioridad de la columna 'ejercicio' si está disponible
+                df_rcf = df_rcf[df_rcf['fecha_anotacion_rcf'].dt.year == int(ejercicio_auditado)].copy()
             elif 'fecha_emision' in df_rcf.columns:
                 df_rcf = df_rcf[df_rcf['fecha_emision'].dt.year == int(ejercicio_auditado)].copy()
+                
+            # Filtrar FACe por año de registro
+            if 'fecha_registro' in df_face.columns:
+                df_face = df_face[df_face['fecha_registro'].dt.year == int(ejercicio_auditado)].copy()
+                
+            # Filtrar Anulaciones por año de solicitud
+            if 'fecha_solicitud_anulacion' in df_anulaciones.columns:
+                df_anulaciones = df_anulaciones[df_anulaciones['fecha_solicitud_anulacion'].dt.year == int(ejercicio_auditado)].copy()
+                
+            # Filtrar Estados por año de inserción (si aplica) o por registros vinculados al RCF actual
+            if 'insertado' in df_estados.columns:
+                df_estados = df_estados[df_estados['insertado'].dt.year == int(ejercicio_auditado)].copy()
+        else:
+            ids_face_en_rcf_total = set(df_rcf[df_rcf['ID_FACE'].notna()]['ID_FACE'].astype(str))
         
         return {
             'rcf': df_rcf,
             'face': df_face,
             'anulaciones': df_anulaciones,
-            'estados': df_estados
+            'estados': df_estados,
+            'ids_face_en_rcf_total': ids_face_en_rcf_total
         }
         
     except Exception as e:
@@ -329,8 +363,9 @@ def obtener_facturas_papel_sospechosas(df_rcf: pd.DataFrame) -> pd.DataFrame:
         (df_trabajo['fecha_emision'] > fecha_obligatoriedad) # Mantener por seguridad normativa general
     )
 
-    # Filtrar por ejercicio si existe la columna o podemos extraerlo de fecha_emision
-    if 'ejercicio' in df_trabajo.columns:
+    if 'fecha_anotacion_rcf' in df_trabajo.columns:
+        condicion &= (df_trabajo['fecha_anotacion_rcf'].dt.year == int(ejercicio_auditado))
+    elif 'ejercicio' in df_trabajo.columns:
         # Convertir a numérico y comparar (maneja floats como 2025.0)
         df_trabajo['ejercicio'] = pd.to_numeric(df_trabajo['ejercicio'], errors='coerce')
         condicion &= (df_trabajo['ejercicio'] == float(ejercicio_auditado))
@@ -396,15 +431,20 @@ def calcular_tiempos_anotacion(df_rcf: pd.DataFrame, df_face: pd.DataFrame) -> p
     
     return df_merge
 
-def identificar_facturas_retenidas(df_face: pd.DataFrame, df_rcf: pd.DataFrame) -> pd.DataFrame:
+def identificar_facturas_retenidas(df_face: pd.DataFrame, df_rcf: pd.DataFrame, ids_precalculados=None) -> pd.DataFrame:
     """
     Identifica facturas que están en FACe pero no en RCF (retenidas)
     """
-    if 'registro' not in df_face.columns or 'ID_FACE' not in df_rcf.columns:
+    if 'registro' not in df_face.columns:
         return pd.DataFrame()
     
     # Obtener IDs de facturas en RCF
-    ids_rcf = set(df_rcf[df_rcf['ID_FACE'].notna()]['ID_FACE'].astype(str))
+    if ids_precalculados is not None:
+        ids_rcf = ids_precalculados
+    else:
+        if 'ID_FACE' not in df_rcf.columns:
+            return pd.DataFrame()
+        ids_rcf = set(df_rcf[df_rcf['ID_FACE'].apply(lambda x: str(x).strip() not in ['', 'nan', 'NaN', 'None'])]['ID_FACE'].astype(str))
     
     # Facturas en FACe que no están en RCF
     df_retenidas = df_face[~df_face['registro'].astype(str).isin(ids_rcf)].copy()
@@ -421,7 +461,7 @@ def obtener_ranking_por_campo(df: pd.DataFrame, campo_agrupar: str,
         return pd.DataFrame()
     
     # Necesitamos una columna para contar
-    columna_contar = 'ID_RCF' if 'ID_RCF' in df.columns else df.columns[0]
+    columna_contar = 'id_fra_rcf' if 'id_fra_rcf' in df.columns else df.columns[0]
     
     ranking = df.groupby(campo_agrupar).agg({
         columna_contar: 'count',

@@ -244,7 +244,7 @@ def main():
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("📄 Generar Informe Word", type="primary", use_container_width=True):
+        if st.button("📄 Generar Informe Word", type="primary", width="stretch"):
             if formato_informe.startswith("Word"):
                 with st.spinner("Generando informe Word... Esto puede tardar unos segundos."):
                     try:
@@ -269,7 +269,7 @@ def main():
                         st.exception(e)
     
     with col2:
-        if st.button("📕 Generar Informe PDF", type="primary", use_container_width=True):
+        if st.button("📕 Generar Informe PDF", type="primary", width="stretch"):
             if formato_informe.startswith("PDF") or True:  # Permitir generar PDF siempre
                 with st.spinner("Generando informe PDF... Esto puede tardar unos segundos."):
                     try:
@@ -294,7 +294,7 @@ def main():
                         st.exception(e)
     
     with col3:
-        if st.button("📊 Generar Ambos Formatos", use_container_width=True):
+        if st.button("📊 Generar Ambos Formatos", width="stretch"):
             with st.spinner("Generando ambos informes..."):
                 try:
                     fecha_str = datetime.now().strftime("%Y%m%d")
@@ -381,7 +381,7 @@ def main():
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("📥 Exportar Datos RCF Completos", use_container_width=True):
+        if st.button("📥 Exportar Datos RCF Completos", width="stretch"):
             from utils.data_loader import exportar_a_excel
             excel_bytes = exportar_a_excel(datos['rcf'], "RCF_Completo")
             st.download_button(
@@ -392,7 +392,7 @@ def main():
             )
     
     with col2:
-        if st.button("📥 Exportar Resumen Análisis", use_container_width=True):
+        if st.button("📥 Exportar Resumen Análisis", width="stretch"):
             # Crear DataFrame resumen
             resumen_data = {
                 'Sección': [],
@@ -419,7 +419,7 @@ def main():
             )
     
     with col3:
-        if st.button("📥 Exportar Todo (ZIP)", use_container_width=True):
+        if st.button("📥 Exportar Todo (ZIP)", width="stretch"):
             st.info("Funcionalidad próximamente: Exportará todos los análisis en un archivo ZIP")
     
     st.markdown("---")

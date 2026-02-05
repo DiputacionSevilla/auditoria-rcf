@@ -60,7 +60,11 @@ def main():
     st.markdown("### 🔍 Facturas Retenidas en FACe")
     st.info("Facturas que están en FACe pero no han sido descargadas/anotadas en el RCF")
     
-    df_retenidas = identificar_facturas_retenidas(datos['face'], df_rcf)
+    df_retenidas = identificar_facturas_retenidas(
+        datos['face'], 
+        df_rcf, 
+        ids_precalculados=datos.get('ids_face_en_rcf_total')
+    )
     
     col1, col2, col3 = st.columns(3)
     
@@ -71,9 +75,11 @@ def main():
         )
     
     with col2:
+        anotadas_rcf = len(df_rcf[(df_rcf['es_papel']==False) & (df_rcf['estado'].astype(str).str.upper() != 'BORRADA')])
         st.metric(
             "Anotadas en RCF",
-            f"{len(datos['rcf'][datos['rcf']['es_papel']==False]):,}"
+            f"{anotadas_rcf:,}",
+            help="Facturas electrónicas vivas (no borradas) en RCF"
         )
     
     with col3:
@@ -106,7 +112,7 @@ def main():
                 'Importe': '{:,.2f} €',
                 'Fecha Registro': lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else ''
             }),
-            use_container_width=True,
+            width="stretch",
             hide_index=True
         )
         
@@ -167,7 +173,7 @@ def main():
         # Evolución temporal de tiempos
         st.markdown("#### 📈 Evolución Mensual de Tiempos")
         
-        df_tiempos['mes'] = pd.to_datetime(df_tiempos['fecha_registro_face']).dt.to_period('M').astype(str)
+        df_tiempos['mes'] = pd.to_datetime(df_tiempos['fecha_anotacion_rcf']).dt.to_period('M').astype(str)
         
         stats_mensuales = df_tiempos.groupby('mes')['tiempo_anotacion_min'].agg([
             'mean', 'median', 'min', 'max', 'count'
@@ -204,7 +210,7 @@ def main():
             height=400
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
         
         # Tabla estadísticas mensuales
         st.markdown("#### 📊 Estadísticas Mensuales Detalladas")
@@ -217,7 +223,7 @@ def main():
                 'Máximo': '{:.2f}',
                 'Nº Facturas': '{:,.0f}'
             }).background_gradient(subset=['Media'], cmap='RdYlGn_r'),
-            use_container_width=True,
+            width="stretch",
             hide_index=True
         )
         
@@ -240,7 +246,7 @@ def main():
             )
             
             fig.update_layout(showlegend=False, height=400)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         
         with col2:
             # Box plot
@@ -253,7 +259,7 @@ def main():
             )
             
             fig.update_layout(showlegend=False, height=400)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         
         st.markdown("---")
         
@@ -261,12 +267,12 @@ def main():
         st.markdown("### 🐌 Top 10 Facturas con Mayor Demora")
         
         top_demoras = df_tiempos.nlargest(10, 'tiempo_anotacion_min')[[
-            'numero_factura', 'nif_emisor', 'razon_social', 
+            'entidad', 'id_fra_rcf', 'numero_factura', 'nif_emisor', 'razon_social', 
             'tiempo_anotacion_min', 'codigo_og'
         ]].copy()
         
         top_demoras.columns = [
-            'Nº Factura', 'NIF', 'Razón Social', 
+            'Entidad', 'ID RCF', 'Nº Factura', 'NIF', 'Razón Social', 
             'Tiempo (min)', 'OG'
         ]
         
@@ -278,7 +284,7 @@ def main():
                 'Tiempo (min)': '{:.2f}',
                 'Tiempo (horas)': '{:.2f}'
             }).background_gradient(subset=['Tiempo (min)'], cmap='Reds'),
-            use_container_width=True,
+            width="stretch",
             hide_index=True
         )
         
@@ -294,7 +300,7 @@ def main():
         )
         
         fig.update_layout(showlegend=False, height=400)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
         
         st.markdown("---")
         
@@ -309,7 +315,7 @@ def main():
             if 'codigo_oc' in df_tiempos.columns:
                 ranking_oc = df_tiempos.groupby('codigo_oc').agg({
                     'tiempo_anotacion_min': 'mean',
-                    'ID_RCF': 'count'
+                    'id_fra_rcf': 'count'
                 }).round(2)
                 
                 ranking_oc.columns = ['Tiempo Medio (min)', 'Nº Facturas']
@@ -328,7 +334,7 @@ def main():
                         'Nº Facturas': '{:,.0f}',
                         'Diferencia vs Media (%)': '{:+.2f}%'
                     }).background_gradient(subset=['Tiempo Medio (min)'], cmap='Reds'),
-                    use_container_width=True
+                    width="stretch"
                 )
         
         with col2:
@@ -337,7 +343,7 @@ def main():
             if 'codigo_ut' in df_tiempos.columns:
                 ranking_ut = df_tiempos.groupby('codigo_ut').agg({
                     'tiempo_anotacion_min': 'mean',
-                    'ID_RCF': 'count'
+                    'id_fra_rcf': 'count'
                 }).round(2)
                 
                 ranking_ut.columns = ['Tiempo Medio (min)', 'Nº Facturas']
@@ -354,7 +360,7 @@ def main():
                         'Nº Facturas': '{:,.0f}',
                         'Diferencia vs Media (%)': '{:+.2f}%'
                     }).background_gradient(subset=['Tiempo Medio (min)'], cmap='Oranges'),
-                    use_container_width=True
+                    width="stretch"
                 )
         
         st.markdown("---")
@@ -365,7 +371,7 @@ def main():
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            if st.button("📥 Exportar Estadísticas Mensuales", use_container_width=True):
+            if st.button("📥 Exportar Estadísticas Mensuales", width="stretch"):
                 excel_bytes = exportar_a_excel(stats_mensuales, "Estadisticas_Mensuales")
                 st.download_button(
                     label="Descargar Excel",
@@ -375,7 +381,7 @@ def main():
                 )
         
         with col2:
-            if st.button("📥 Exportar Top 10 Demoras", use_container_width=True):
+            if st.button("📥 Exportar Top 10 Demoras", width="stretch"):
                 excel_bytes = exportar_a_excel(top_demoras, "Top_10_Demoras")
                 st.download_button(
                     label="Descargar Excel",
@@ -385,7 +391,7 @@ def main():
                 )
         
         with col3:
-            if st.button("📥 Exportar Ranking Unidades", use_container_width=True):
+            if st.button("📥 Exportar Ranking Unidades", width="stretch"):
                 if 'codigo_oc' in df_tiempos.columns:
                     excel_bytes = exportar_a_excel(
                         ranking_oc.reset_index(),

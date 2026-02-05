@@ -128,7 +128,7 @@ def main():
             lambda x: ['background-color: #d4edda' if v == '✅' else 'background-color: #f8d7da' 
                       for v in x], subset=['Estado']
         ),
-        use_container_width=True,
+        width="stretch",
         hide_index=True
     )
     
@@ -153,7 +153,7 @@ def main():
         fig.update_traces(texttemplate='%{text}', textposition='outside')
         fig.update_layout(showlegend=False, height=400)
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     
     with col2:
         # Gráfico circular de cumplimiento
@@ -172,7 +172,7 @@ def main():
             height=400
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     
     st.markdown("---")
     
@@ -189,8 +189,9 @@ def main():
                     
                     st.dataframe(
                         df_incumplimientos.head(20),
-                        use_container_width=True,
-                        hide_index=True
+                        width="stretch",
+                        hide_index=True,
+                        column_order=['entidad', 'id_fra_rcf', 'numero_factura', 'nif_emisor', 'fecha_emision', 'motivo_rechazo']
                     )
                     
                     if len(resultado['facturas']) > 20:
@@ -263,12 +264,12 @@ def main():
         )
         
         fig.update_layout(showlegend=False, height=400)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
         
         # Tabla
         st.dataframe(
             df_motivos.style.format({'Cantidad': '{:,.0f}'}),
-            use_container_width=True,
+            width="stretch",
             hide_index=True
         )
         
@@ -290,7 +291,7 @@ def main():
     col1, col2 = st.columns(2)
     
     with col1:
-        if st.button("📥 Exportar Resumen Validaciones", use_container_width=True):
+        if st.button("📥 Exportar Resumen Validaciones", width="stretch"):
             excel_bytes = exportar_a_excel(df_validaciones, "Resumen_Validaciones")
             st.download_button(
                 label="Descargar Excel",
@@ -300,7 +301,7 @@ def main():
             )
     
     with col2:
-        if st.button("📥 Exportar Todas las Facturas Rechazadas", use_container_width=True):
+        if st.button("📥 Exportar Todas las Facturas Rechazadas", width="stretch"):
             if analisis_rechazos['facturas']:
                 df_rechazadas = pd.DataFrame(analisis_rechazos['facturas'])
                 excel_bytes = exportar_a_excel(df_rechazadas, "Facturas_Rechazadas")

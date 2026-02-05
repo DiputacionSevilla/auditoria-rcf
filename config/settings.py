@@ -6,8 +6,8 @@ Configuración global de la aplicación
 CONFIGURACION = {
     'nombre_entidad': 'Diputación de Sevilla',
     'ejercicio_auditado': '2025',
-    'fecha_inicio_obligatoriedad': '2015-01-15',
-    'fecha_inicio_validaciones': '2015-10-15',
+    'fecha_inicio_obligatoriedad': '2025-01-01',
+    'fecha_inicio_validaciones': '2025-01-01',
     'importe_minimo_obligatorio': 3000,
     'meses_alerta_morosidad': 3,
 }
@@ -30,11 +30,22 @@ COLORES = {
 COLORES_GRAFICOS = {
     'papel': '#FF6B6B',
     'electronicas': '#4ECDC4',
-    'anuladas': '#95E1D3',
-    'rechazadas': '#F38181',
-    'conformadas': '#8360C3',
+    # Estados específicos del RCF (mapeo directo por etiqueta)
+    'pagada': '#2ECC71',          # Verde
+    'contabilizada': '#3498DB',   # Azul
+    'ordenada': '#9B59B6',        # Púrpura
+    'inicial': '#95A5A6',         # Gris
+    'pdte de aceptar': '#F1C40F', # Amarillo
+    'rechazada': '#E74C3C',       # Rojo
+    'anulada': '#34495E',         # Gris oscuro
+    # Compatibilidad y variaciones (singular/plural)
+    'anuladas': '#34495E',
+    'rechazadas': '#E74C3C',
     'pagadas': '#2ECC71',
+    'conformadas': '#8360C3',
+    'conformada': '#8360C3',
     'pendientes': '#F39C12',
+    'pendiente': '#F39C12',
 }
 
 # Estados de facturas
@@ -65,7 +76,7 @@ VALIDACIONES_HAP = {
 # Columnas esperadas en archivos
 COLUMNAS_ESPERADAS = {
     'rcf': [
-        'ID_RCF', 'ID_FACE', 'fecha_emision', 'fecha_anotacion_rcf',
+        'id_fra_rcf', 'entidad', 'ID_FACE', 'fecha_emision', 'fecha_anotacion_rcf',
         'nif_emisor', 'razon_social', 'numero_factura', 'serie',
         'importe_total', 'moneda', 'tipo_persona', 'estado',
         'codigo_oc', 'codigo_og', 'codigo_ut'

@@ -78,7 +78,7 @@ def aplicar_todas_validaciones(df_rcf: pd.DataFrame) -> Dict:
                     
                     # Añadir facturas al listado de este código
                     nuevas_facturas = df_incumplimiento[[
-                        'ID_RCF', 'numero_factura', 'nif_emisor', 'fecha_emision', 'motivo_rechazo'
+                        'entidad', 'id_fra_rcf', 'numero_factura', 'nif_emisor', 'fecha_emision', 'motivo_rechazo'
                     ]].to_dict('records')
                     resultados['validaciones'][code]['facturas'].extend(nuevas_facturas)
     
@@ -106,5 +106,5 @@ def analizar_rechazos(df_rcf: pd.DataFrame) -> Dict:
         'total_rechazadas': len(rechazadas),
         'porcentaje': (len(rechazadas) / len(df_rcf) * 100) if len(df_rcf) > 0 else 0,
         'por_motivo': por_motivo.to_dict() if len(por_motivo) > 0 else {},
-        'facturas': rechazadas[['ID_RCF', 'numero_factura', 'fecha_emision', 'importe_total']].to_dict('records') if len(rechazadas) > 0 else []
+        'facturas': rechazadas[['entidad', 'id_fra_rcf', 'numero_factura', 'fecha_anotacion_rcf', 'importe_total']].to_dict('records') if len(rechazadas) > 0 else []
     }

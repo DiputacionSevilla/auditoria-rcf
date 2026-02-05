@@ -116,15 +116,15 @@ def main():
     # === EVOLUCIÓN TEMPORAL ===
     st.markdown("### 📈 Evolución Temporal de Facturas Susceptibles")
     
-    if len(facturas_sospechosas) > 0 and 'fecha_emision' in facturas_sospechosas.columns:
+    if len(facturas_sospechosas) > 0 and 'fecha_anotacion_rcf' in facturas_sospechosas.columns:
         # Evolución mensual
         facturas_sospechosas['mes'] = pd.to_datetime(
-            facturas_sospechosas['fecha_emision']
+            facturas_sospechosas['fecha_anotacion_rcf']
         ).dt.to_period('M').astype(str)
         
         # Total mensual
         total_mensual = df_rcf.groupby(
-            pd.to_datetime(df_rcf['fecha_emision']).dt.to_period('M').astype(str)
+            pd.to_datetime(df_rcf['fecha_anotacion_rcf']).dt.to_period('M').astype(str)
         ).size()
         
         # Sospechosas mensuales
@@ -173,7 +173,7 @@ def main():
             height=400
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
         
         # Tabla resumen
         st.markdown("#### 📋 Tabla Resumen Mensual")
@@ -188,7 +188,7 @@ def main():
                 'Facturas Sospechosas': '{:,.0f}',
                 'Porcentaje (%)': '{:.2f}%'
             }).background_gradient(subset=['Porcentaje (%)'], cmap='Reds'),
-            use_container_width=True
+            width="stretch"
         )
     else:
         st.info("No hay facturas susceptibles de incumplimiento en el periodo")
@@ -200,18 +200,19 @@ def main():
     
     if len(facturas_sospechosas) > 0:
         top_10 = facturas_sospechosas.nlargest(10, 'base_imponible')[[
-            'numero_factura', 'fecha_emision', 'nif_emisor', 'razon_social',
+            'entidad', 'id_fra_rcf', 'numero_factura', 'fecha_emision', 'nif_emisor', 'razon_social',
             'base_imponible', 'importe_total', 'codigo_oc'
         ]].copy()
         
-        top_10.columns = ['Nº Factura', 'Fecha', 'NIF', 'Razón Social', 'Base Imponible (€)', 'Total (€)', 'OC']
+        top_10.columns = ['Entidad', 'ID RCF', 'Nº Factura', 'Fecha', 'NIF', 'Razón Social', 'Base Imponible (€)', 'Total (€)', 'OC']
         
         st.dataframe(
             top_10.style.format({
-                'Importe (€)': '{:,.2f}',
+                'Base Imponible (€)': '{:,.2f}',
+                'Total (€)': '{:,.2f}',
                 'Fecha': lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else ''
             }),
-            use_container_width=True,
+            width="stretch",
             hide_index=True
         )
         
@@ -232,7 +233,7 @@ def main():
     
     if len(facturas_sospechosas) > 0:
         top_proveedores = facturas_sospechosas.groupby(['nif_emisor', 'razon_social']).agg({
-            'ID_RCF': 'count',
+            'id_fra_rcf': 'count',
             'base_imponible': 'sum'
         }).reset_index()
         
@@ -254,7 +255,7 @@ def main():
         fig.update_traces(texttemplate='%{text} facturas', textposition='outside')
         fig.update_layout(showlegend=False, height=400)
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
         
         # Tabla
         st.dataframe(
@@ -262,7 +263,7 @@ def main():
                 'Importe Acumulado': '{:,.2f} €',
                 'Nº Facturas': '{:,.0f}'
             }),
-            use_container_width=True,
+            width="stretch",
             hide_index=True
         )
     
@@ -277,7 +278,7 @@ def main():
         if len(facturas_sospechosas) > 0 and 'codigo_oc' in facturas_sospechosas.columns:
             ranking_oc = facturas_sospechosas.groupby('codigo_oc').agg({
                 'base_imponible': 'sum',
-                'ID_RCF': 'count'
+                'id_fra_rcf': 'count'
             }).sort_values('base_imponible', ascending=False).head(10)
             
             ranking_oc.columns = ['BI Total', 'Nº Facturas']
@@ -288,7 +289,7 @@ def main():
                     'BI Total': '{:,.2f} €',
                     'Nº Facturas': '{:,.0f}'
                 }).background_gradient(subset=['BI Total'], cmap='Oranges'),
-                use_container_width=True
+                width="stretch"
             )
     
     with col2:
@@ -297,7 +298,7 @@ def main():
         if len(facturas_sospechosas) > 0 and 'codigo_ut' in facturas_sospechosas.columns:
             ranking_ut = facturas_sospechosas.groupby('codigo_ut').agg({
                 'base_imponible': 'sum',
-                'ID_RCF': 'count'
+                'id_fra_rcf': 'count'
             }).sort_values('base_imponible', ascending=False).head(10)
             
             ranking_ut.columns = ['BI Total', 'Nº Facturas']
@@ -308,7 +309,7 @@ def main():
                     'BI Total': '{:,.2f} €',
                     'Nº Facturas': '{:,.0f}'
                 }).background_gradient(subset=['BI Total'], cmap='Purples'),
-                use_container_width=True
+                width="stretch"
             )
     
     st.markdown("---")
@@ -319,7 +320,7 @@ def main():
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("📥 Exportar Todas las Sospechosas", use_container_width=True):
+        if st.button("📥 Exportar Todas las Sospechosas", width="stretch"):
             if len(facturas_sospechosas) > 0:
                 excel_bytes = exportar_a_excel(
                     facturas_sospechosas,
@@ -333,7 +334,7 @@ def main():
                 )
     
     with col2:
-        if st.button("📥 Exportar Ranking Proveedores", use_container_width=True):
+        if st.button("📥 Exportar Ranking Proveedores", width="stretch"):
             if len(facturas_sospechosas) > 0:
                 excel_bytes = exportar_a_excel(
                     top_proveedores,
@@ -347,7 +348,7 @@ def main():
                 )
     
     with col3:
-        if st.button("📥 Exportar Ranking Unidades", use_container_width=True):
+        if st.button("📥 Exportar Ranking Unidades", width="stretch"):
             if len(facturas_sospechosas) > 0 and 'codigo_oc' in facturas_sospechosas.columns:
                 excel_bytes = exportar_a_excel(
                     ranking_oc.reset_index(),

@@ -67,9 +67,9 @@ def main():
     st.sidebar.title("🔍 Filtros")
     
     # Filtro de fecha
-    if 'fecha_emision' in df_rcf.columns:
-        fecha_min = pd.to_datetime(df_rcf['fecha_emision']).min()
-        fecha_max = pd.to_datetime(df_rcf['fecha_emision']).max()
+    if 'fecha_anotacion_rcf' in df_rcf.columns:
+        fecha_min = pd.to_datetime(df_rcf['fecha_anotacion_rcf']).min()
+        fecha_max = pd.to_datetime(df_rcf['fecha_anotacion_rcf']).max()
         
         fecha_inicio = st.sidebar.date_input(
             "Fecha inicio",
@@ -86,12 +86,20 @@ def main():
         )
         
         # Aplicar filtro
-        df_filtrado = filtrar_por_periodo(
-            df_rcf,
-            'fecha_emision',
+        # Para evitar perder registros sin fecha (como los 'PDTE DE ACEPTAR'),
+        # el filtro de fecha solo actúa si hay fecha.
+        df_con_fecha = df_rcf[df_rcf['fecha_anotacion_rcf'].notna()]
+        df_sin_fecha = df_rcf[df_rcf['fecha_anotacion_rcf'].isna()]
+        
+        df_filtrado_con = filtrar_por_periodo(
+            df_con_fecha,
+            'fecha_anotacion_rcf',
             fecha_inicio,
             fecha_fin
         )
+        
+        # Unimos los filtrados por fecha con los que no tienen fecha (pero que pasaron el filtro de ejercicio)
+        df_filtrado = pd.concat([df_filtrado_con, df_sin_fecha]).drop_duplicates().copy()
     else:
         df_filtrado = df_rcf.copy()
     
@@ -106,18 +114,21 @@ def main():
     # === MÉTRICAS PRINCIPALES ===
     st.markdown("### 📈 Métricas Principales")
     
+    # Excluir BORRADAS para métricas generales (según feedback del usuario)
+    df_vivas = df_filtrado[df_filtrado['estado'].astype(str).str.upper() != 'BORRADA']
+    total_facturas = len(df_vivas)
+    
     col1, col2, col3, col4, col5, col6 = st.columns(6)
     
     with col1:
-        total_facturas = len(df_filtrado)
         st.metric(
             "Total Facturas",
             f"{total_facturas:,}",
-            help="Número total de facturas en el periodo"
+            help="Total facturas vivas (excluyendo borradas)"
         )
     
     with col2:
-        facturas_electronicas = len(df_filtrado[df_filtrado['es_papel'] == False])
+        facturas_electronicas = len(df_vivas[df_vivas['es_papel'] == False])
         porc_elect = (facturas_electronicas / total_facturas * 100) if total_facturas > 0 else 0
         st.metric(
             "Electrónicas",
@@ -126,7 +137,7 @@ def main():
         )
     
     with col3:
-        facturas_papel = len(df_filtrado[df_filtrado['es_papel'] == True])
+        facturas_papel = len(df_vivas[df_vivas['es_papel'] == True])
         porc_papel = (facturas_papel / total_facturas * 100) if total_facturas > 0 else 0
         st.metric(
             "En Papel",
@@ -135,12 +146,12 @@ def main():
         )
     
     with col4:
-        if 'importe_total' in df_filtrado.columns:
-            importe_total = df_filtrado['importe_total'].sum()
+        if 'importe_total' in df_vivas.columns:
+            importe_total = df_vivas['importe_total'].sum()
             st.metric(
                 "Importe Total",
                 f"{importe_total:,.0f} €",
-                help="Suma de importes de todas las facturas"
+                help="Suma de importes de facturas vivas"
             )
     
     with col5:
@@ -171,8 +182,8 @@ def main():
     with col1:
         st.markdown("### 📅 Evolución Temporal")
         
-        if 'fecha_emision' in df_filtrado.columns:
-            df_filtrado['mes'] = pd.to_datetime(df_filtrado['fecha_emision']).dt.to_period('M').astype(str)
+        if 'fecha_anotacion_rcf' in df_filtrado.columns:
+            df_filtrado['mes'] = pd.to_datetime(df_filtrado['fecha_anotacion_rcf']).dt.to_period('M').astype(str)
             
             evolucion = df_filtrado.groupby(['mes', 'es_papel']).size().reset_index(name='cantidad')
             evolucion['tipo'] = evolucion['es_papel'].map({True: 'Papel', False: 'Electrónicas'})
@@ -197,7 +208,7 @@ def main():
                 hovermode='x unified'
             )
             
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
     
     with col2:
         st.markdown("### 🎯 Distribución por Estado")
@@ -222,7 +233,7 @@ def main():
                 showlegend=True
             )
             
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
     
     # Fila 2: Top proveedores y distribución por importe
     col1, col2 = st.columns(2)
@@ -233,7 +244,7 @@ def main():
         if 'razon_social' in df_filtrado.columns and 'importe_total' in df_filtrado.columns:
             top_proveedores = df_filtrado.groupby('razon_social').agg({
                 'importe_total': 'sum',
-                'ID_RCF': 'count'
+                'id_fra_rcf': 'count'
             }).sort_values('importe_total', ascending=False).head(10)
             
             fig = px.bar(
@@ -252,7 +263,7 @@ def main():
                 showlegend=False
             )
             
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
     
     with col2:
         st.markdown("### 💰 Distribución de Importes")
@@ -281,7 +292,7 @@ def main():
                 showlegend=False
             )
             
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
     
     # Fila 3: Análisis por unidades
     col1, col2 = st.columns(2)
@@ -307,7 +318,7 @@ def main():
                 showlegend=False
             )
             
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
     
     with col2:
         st.markdown("### 📊 Top 10 Unidades Tramitadoras")
@@ -330,7 +341,7 @@ def main():
                 showlegend=False
             )
             
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
     
     st.markdown("---")
     
@@ -351,6 +362,10 @@ def main():
             # Fallback a NIF
             condicion_papel_alto &= (df_filtrado['nif_emisor'].apply(es_persona_juridica))
             
+        # Excluir facturas RECHAZADAS o ANULADAS (para consistencia con Facturas Papel)
+        if 'estado' in df_filtrado.columns:
+             condicion_papel_alto &= (~df_filtrado['estado'].astype(str).str.upper().isin(['RECHAZADA', 'ANULADA']))
+            
         papel_alto = df_filtrado[condicion_papel_alto]
         
         if len(papel_alto) > 0:
@@ -369,7 +384,13 @@ def main():
         })
     
     # Facturas retenidas en FACe
-    retenidas = len(datos['face']) - len(df_filtrado[df_filtrado['es_papel'] == False])
+    from utils.data_loader import identificar_facturas_retenidas
+    df_retenidas = identificar_facturas_retenidas(
+        datos['face'], 
+        df_rcf, 
+        ids_precalculados=datos.get('ids_face_en_rcf_total')
+    )
+    retenidas = len(df_retenidas)
     if retenidas > 0:
         alertas.append({
             'tipo': 'warning',
@@ -386,6 +407,51 @@ def main():
                 st.info(alerta['mensaje'])
     else:
         st.success("✅ No se han detectado alertas en el periodo seleccionado")
+
+    st.markdown("---")
+
+    # === TABLA FACTURAS EJERCICIOS ANTERIORES ===
+    st.markdown("### 📜 Facturas de años anteriores registradas en el ejercicio")
+    st.info("Estas facturas han sido registradas en el año auditado pero su fecha de expedición/emisión es de años anteriores.")
+
+    import toml
+    try:
+        config_toml = toml.load(str(Path(__file__).parent.parent / ".streamlit" / "config.toml"))
+        ejercicio_auditado = int(config_toml.get('auditoria', {}).get('ejercicio_auditado', 2025))
+    except:
+        ejercicio_auditado = 2025
+
+    if 'fecha_emision' in df_filtrado.columns and 'fecha_anotacion_rcf' in df_filtrado.columns:
+        # Una factura es de "años anteriores" si:
+        # 1. Su EJERCICIO es anterior al auditado
+        # 2. Su FECHA EMISIÓN es anterior al año auditado
+        ejercicio_col = 'ejercicio' if 'ejercicio' in df_filtrado.columns else None
+        
+        cond_anterior = (df_filtrado['fecha_emision'].dt.year < ejercicio_auditado)
+        if ejercicio_col:
+            cond_anterior |= (df_filtrado[ejercicio_col] < ejercicio_auditado)
+            
+        df_anteriores = df_filtrado[cond_anterior].copy()
+
+        if not df_anteriores.empty:
+            cols_show = ['entidad', 'id_fra_rcf', 'numero_factura', 'fecha_emision', 'fecha_anotacion_rcf', 'nif_emisor', 'razon_social', 'importe_total']
+            df_show = df_anteriores[cols_show].copy()
+            df_show.columns = ['Entidad', 'ID RCF', 'Nº Factura', 'Fecha Emisión', 'Fecha Registro RCF', 'NIF Emisor', 'Razón Social', 'Importe (€)']
+            
+            st.dataframe(
+                df_show.style.format({
+                    'Importe (€)': '{:,.2f}',
+                    'Fecha Emisión': lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else '',
+                    'Fecha Registro RCF': lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else ''
+                }),
+                width="stretch",
+                hide_index=True
+            )
+            st.caption(f"Total: {len(df_anteriores)} facturas de años anteriores.")
+        else:
+            st.success("No se han encontrado facturas de años anteriores registradas en este ejercicio.")
+    else:
+        st.warning("No se pueden calcular las facturas de años anteriores por falta de columnas de fecha.")
     
     st.markdown("---")
     
@@ -395,19 +461,19 @@ def main():
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        if st.button("📄 Facturas Papel", use_container_width=True):
+        if st.button("📄 Facturas Papel", width="stretch"):
             st.switch_page("pages/2_Facturas_Papel.py")
     
     with col2:
-        if st.button("⏱️ Anotación RCF", use_container_width=True):
+        if st.button("⏱️ Anotación RCF", width="stretch"):
             st.switch_page("pages/3_Anotacion_RCF.py")
     
     with col3:
-        if st.button("✅ Validaciones", use_container_width=True):
+        if st.button("✅ Validaciones", width="stretch"):
             st.switch_page("pages/4_Validaciones.py")
     
     with col4:
-        if st.button("📑 Generar Informe", use_container_width=True):
+        if st.button("📑 Generar Informe", width="stretch"):
             st.switch_page("pages/7_Generar_Informe.py")
 
 if __name__ == "__main__":
