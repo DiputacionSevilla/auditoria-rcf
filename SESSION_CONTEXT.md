@@ -3,9 +3,84 @@
 Este documento resume el progreso actual, los hallazgos técnicos y las decisiones de diseño tomadas para facilitar la continuidad del proyecto.
 
 ## 🎯 Objetivo de la Sesión Actual
-Mejorar sustancialmente el sistema de generación de informes para incluir toda la información mostrada en las pantallas de análisis.
+Corregir el cálculo de tiempos de anotación en RCF que mostraba valores negativos. **✅ COMPLETADO**
 
 ## ✅ Mejoras Realizadas en Esta Sesión
+
+### Corrección del Cálculo de Tiempos de Anotación (Sección V.2)
+
+**Problema identificado**: Los tiempos de anotación en la página `3_Anotacion_RCF.py` aparecían en negativo (ej: -50914 minutos), lo cual es lógicamente imposible.
+
+**Causa raíz**:
+- El código hacía un merge con el archivo FACe para obtener la `fecha_registro` de FACe.
+- Sin embargo, el archivo RCF ya contiene ambas fechas necesarias:
+  - `FECHA REG. EN FACE`: Fecha de entrada de la factura en FACe
+  - `FECHA REGISTRO`: Fecha de anotación en el RCF local
+- El mapeo de columnas no incluía `FECHA REG. EN FACE`, por lo que se usaban fechas incorrectas.
+
+**Solución implementada** en `utils/data_loader.py`:
+
+1. **Nuevo mapeo de columna** añadido a `MAPEO_COLUMNAS['rcf']`:
+   ```python
+   'fecha_registro_face': ['fecha_registro_face', 'FECHA REG. EN FACE', 'Fecha Reg. en FACe', 'fecha_reg_face']
+   ```
+
+2. **Conversión de fechas** actualizada para incluir la nueva columna:
+   ```python
+   df_rcf = convertir_fechas(df_rcf, ['fecha_emision', 'fecha_anotacion_rcf', 'fecha_registro_face'])
+   ```
+
+3. **Función `calcular_tiempos_anotacion` reescrita**:
+   - Ahora usa directamente las columnas del RCF sin necesidad de merge con archivo FACe
+   - Prioriza `fecha_registro_face` del RCF si existe
+   - Mantiene fallback al archivo FACe por compatibilidad
+
+**Resultado**: El tiempo de anotación ahora se calcula correctamente como:
+```
+tiempo = fecha_anotacion_rcf - fecha_registro_face
+```
+Donde ambas fechas provienen del archivo RCF, garantizando consistencia.
+
+### Tratamiento de Anomalías en Tiempos de Anotación
+
+**Problema identificado**: Tras corregir el mapeo, aún existían registros con tiempos negativos (anomalías en los datos de origen).
+
+**Solución implementada** en `pages/3_Anotacion_RCF.py`:
+
+1. **Separación de datos**:
+   - Tiempos válidos (≥0): Usados para métricas y análisis
+   - Anomalías (<0): Excluidas de métricas pero mostradas para investigación
+
+2. **Aviso visual**: Se muestra un warning con el número de anomalías detectadas
+
+3. **Nueva sección de Anomalías**:
+   - Tabla con las facturas afectadas
+   - Columnas: Entidad, ID RCF, Nº Factura, NIF, Fechas, Diferencia en minutos/días
+   - Botón de exportación a Excel para investigación
+
+4. **Métricas limpias**: Media, mediana, mínimo y máximo calculados solo con datos válidos
+
+### Corrección del Formato de Fechas (Causa raíz de tiempos negativos)
+
+**Problema identificado**: Las fechas se interpretaban en formato americano (MM/DD/YYYY) en lugar de europeo (DD/MM/YYYY).
+
+**Ejemplo del error**:
+- `12/08/2025` se interpretaba como 8 de diciembre 2025 (incorrecto)
+- Debería ser 12 de agosto 2025 (correcto)
+
+**Solución**: Modificada la función `convertir_fechas()` para usar `dayfirst=True`:
+```python
+df[col] = pd.to_datetime(df[col], dayfirst=True, errors='coerce')
+```
+
+**Mejora adicional**: La función `normalizar_columnas()` ahora hace comparación case-insensitive y elimina espacios extra para mayor robustez en el mapeo de columnas
+
+---
+
+## 🎯 Objetivo de Sesión Anterior (05/02/2026 - mañana)
+Mejorar sustancialmente el sistema de generación de informes para incluir toda la información mostrada en las pantallas de análisis.
+
+## ✅ Mejoras Realizadas en Sesión Anterior
 
 ### Generación de Informes Completamente Reescrita
 
@@ -89,7 +164,9 @@ Resolver las discrepancias en el conteo de facturas del Dashboard y mejorar la t
 - [ ] Validar la consistencia final de los informes descargables (Excel) con las nuevas columnas.
 - [ ] Revisar si hay más estados que deban ser tratados con lógica especial de fechas nulas.
 - [x] ~~Ajustar el generador de informes PDF para reflejar los nuevos desgloses de métricas.~~ (COMPLETADO)
+- [x] ~~Corregir tiempos negativos en Anotación RCF~~ (COMPLETADO - formato de fechas corregido con dayfirst=True)
 - [ ] Probar la generación de informes con datos reales y verificar que todas las tablas se muestran correctamente.
+- [x] ~~Verificar que los tiempos de anotación sean coherentes tras la corrección.~~ (COMPLETADO - funcionando correctamente)
 
 ---
 *Este archivo debe mantenerse actualizado al final de cada sesión de trabajo intensivo.*

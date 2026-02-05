@@ -133,38 +133,53 @@ def main():
     # === TIEMPOS DE ANOTACIÓN ===
     st.markdown("### ⏱️ Análisis de Tiempos de Anotación")
     st.info("Tiempo transcurrido desde el registro en FACe hasta la anotación en RCF")
-    
-    df_tiempos = calcular_tiempos_anotacion(df_rcf, datos['face'])
-    
-    if len(df_tiempos) > 0:
-        # Métricas de tiempo
+
+    df_tiempos_total = calcular_tiempos_anotacion(df_rcf, datos['face'])
+
+    if len(df_tiempos_total) > 0:
+        # Separar tiempos válidos (>=0) de anomalías (negativos)
+        df_tiempos = df_tiempos_total[df_tiempos_total['tiempo_anotacion_min'] >= 0].copy()
+        df_anomalias = df_tiempos_total[df_tiempos_total['tiempo_anotacion_min'] < 0].copy()
+
+        num_anomalias = len(df_anomalias)
+        num_validos = len(df_tiempos)
+
+        # Mostrar aviso de anomalías si existen
+        if num_anomalias > 0:
+            st.warning(f"""
+            ⚠️ **Anomalías detectadas**: Se han encontrado **{num_anomalias:,}** facturas con tiempos negativos
+            (fecha de anotación en RCF anterior a fecha de registro en FACe).
+            Estas facturas se excluyen de las métricas pero se muestran en la sección de anomalías para su investigación.
+            """)
+
+        # Métricas de tiempo (solo con datos válidos)
         col1, col2, col3, col4 = st.columns(4)
-        
+
         with col1:
-            tiempo_medio = df_tiempos['tiempo_anotacion_min'].mean()
+            tiempo_medio = df_tiempos['tiempo_anotacion_min'].mean() if len(df_tiempos) > 0 else 0
             st.metric(
                 "Tiempo Medio",
                 f"{tiempo_medio:.2f} min",
-                help="Tiempo medio de anotación"
+                help=f"Tiempo medio de anotación (basado en {num_validos:,} facturas válidas)"
             )
-        
+
         with col2:
-            tiempo_mediano = df_tiempos['tiempo_anotacion_min'].median()
+            tiempo_mediano = df_tiempos['tiempo_anotacion_min'].median() if len(df_tiempos) > 0 else 0
             st.metric(
                 "Tiempo Mediano",
                 f"{tiempo_mediano:.2f} min",
                 help="Valor central de los tiempos"
             )
-        
+
         with col3:
-            tiempo_min = df_tiempos['tiempo_anotacion_min'].min()
+            tiempo_min = df_tiempos['tiempo_anotacion_min'].min() if len(df_tiempos) > 0 else 0
             st.metric(
                 "Tiempo Mínimo",
                 f"{tiempo_min:.2f} min"
             )
-        
+
         with col4:
-            tiempo_max = df_tiempos['tiempo_anotacion_min'].max()
+            tiempo_max = df_tiempos['tiempo_anotacion_min'].max() if len(df_tiempos) > 0 else 0
             st.metric(
                 "Tiempo Máximo",
                 f"{tiempo_max:.2f} min"
@@ -403,7 +418,72 @@ def main():
                         file_name="ranking_unidades_tiempos.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
-        
+
+        # === SECCIÓN DE ANOMALÍAS ===
+        if num_anomalias > 0:
+            st.markdown("---")
+            st.markdown("### ⚠️ Anomalías de Tiempos (Para Investigación)")
+            st.error(f"""
+            **{num_anomalias:,} facturas** tienen fecha de anotación en RCF **anterior** a la fecha de registro en FACe.
+            Esto es lógicamente imposible y puede indicar:
+            - Errores en los datos de origen
+            - Facturas registradas manualmente en RCF antes de su llegada por FACe
+            - Problemas de sincronización de fechas entre sistemas
+            """)
+
+            # Preparar tabla de anomalías
+            cols_anomalias = ['entidad', 'id_fra_rcf', 'numero_factura', 'nif_emisor', 'razon_social',
+                             'fecha_registro_face', 'fecha_anotacion_rcf', 'tiempo_anotacion_min']
+            cols_disponibles = [c for c in cols_anomalias if c in df_anomalias.columns]
+
+            df_anomalias_display = df_anomalias[cols_disponibles].copy()
+
+            # Renombrar columnas para mostrar
+            rename_map = {
+                'entidad': 'Entidad',
+                'id_fra_rcf': 'ID RCF',
+                'numero_factura': 'Nº Factura',
+                'nif_emisor': 'NIF',
+                'razon_social': 'Proveedor',
+                'fecha_registro_face': 'Fecha Reg. FACe',
+                'fecha_anotacion_rcf': 'Fecha Anotación RCF',
+                'tiempo_anotacion_min': 'Diferencia (min)'
+            }
+            df_anomalias_display = df_anomalias_display.rename(columns=rename_map)
+
+            # Añadir columna de días para mejor comprensión
+            if 'Diferencia (min)' in df_anomalias_display.columns:
+                df_anomalias_display['Diferencia (días)'] = (df_anomalias_display['Diferencia (min)'] / 1440).round(1)
+
+            # Ordenar por diferencia (los más negativos primero)
+            df_anomalias_display = df_anomalias_display.sort_values('Diferencia (min)', ascending=True)
+
+            st.dataframe(
+                df_anomalias_display.head(50).style.format({
+                    'Diferencia (min)': '{:,.0f}',
+                    'Diferencia (días)': '{:,.1f}',
+                    'Fecha Reg. FACe': lambda x: x.strftime('%d/%m/%Y %H:%M') if pd.notna(x) else '',
+                    'Fecha Anotación RCF': lambda x: x.strftime('%d/%m/%Y %H:%M') if pd.notna(x) else ''
+                }),
+                width="stretch",
+                hide_index=True
+            )
+
+            if num_anomalias > 50:
+                st.caption(f"Mostrando 50 de {num_anomalias:,} anomalías. Exporta para ver todas.")
+
+            # Botón de exportar anomalías
+            col_exp1, col_exp2, col_exp3 = st.columns([1, 1, 1])
+            with col_exp1:
+                if st.button("📥 Exportar Anomalías", width="stretch"):
+                    excel_bytes = exportar_a_excel(df_anomalias_display, "Anomalias_Tiempos")
+                    st.download_button(
+                        label="Descargar Excel",
+                        data=excel_bytes,
+                        file_name="anomalias_tiempos_anotacion.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+
     else:
         st.warning("No hay datos suficientes para calcular tiempos de anotación")
     
@@ -417,6 +497,8 @@ def main():
     ranking_oc_tiempos_informe = pd.DataFrame()
     ranking_ut_tiempos_informe = pd.DataFrame()
     stats_mensuales_informe = pd.DataFrame()
+    df_anomalias_informe = pd.DataFrame()
+    num_anomalias_informe = 0
 
     if len(df_retenidas) > 0:
         df_retenidas_informe = df_retenidas[[
@@ -428,61 +510,90 @@ def main():
             'Importe', 'Fecha Registro', 'OC'
         ]
 
-    if len(df_tiempos) > 0:
-        # Top demoras
-        top_demoras_informe = df_tiempos.nlargest(10, 'tiempo_anotacion_min')[[
-            'entidad', 'id_fra_rcf', 'numero_factura', 'nif_emisor', 'razon_social',
-            'tiempo_anotacion_min', 'codigo_og'
-        ]].copy()
-        top_demoras_informe.columns = [
-            'Entidad', 'ID RCF', 'Nº Factura', 'NIF', 'Razón Social',
-            'Tiempo (min)', 'OG'
-        ]
-        top_demoras_informe['Tiempo (horas)'] = top_demoras_informe['Tiempo (min)'] / 60
+    if len(df_tiempos_total) > 0:
+        # Separar datos válidos y anomalías para el informe
+        df_tiempos_validos = df_tiempos_total[df_tiempos_total['tiempo_anotacion_min'] >= 0].copy()
+        df_anomalias_temp = df_tiempos_total[df_tiempos_total['tiempo_anotacion_min'] < 0].copy()
+        num_anomalias_informe = len(df_anomalias_temp)
 
-        # Stats mensuales
-        df_tiempos['mes'] = pd.to_datetime(df_tiempos['fecha_anotacion_rcf']).dt.to_period('M').astype(str)
-        stats_mensuales_informe = df_tiempos.groupby('mes')['tiempo_anotacion_min'].agg([
-            'mean', 'median', 'min', 'max', 'count'
-        ]).reset_index()
-        stats_mensuales_informe.columns = ['Mes', 'Media', 'Mediana', 'Mínimo', 'Máximo', 'Nº Facturas']
+        if len(df_tiempos_validos) > 0:
+            # Top demoras (solo datos válidos)
+            top_demoras_informe = df_tiempos_validos.nlargest(10, 'tiempo_anotacion_min')[[
+                'entidad', 'id_fra_rcf', 'numero_factura', 'nif_emisor', 'razon_social',
+                'tiempo_anotacion_min', 'codigo_og'
+            ]].copy()
+            top_demoras_informe.columns = [
+                'Entidad', 'ID RCF', 'Nº Factura', 'NIF', 'Razón Social',
+                'Tiempo (min)', 'OG'
+            ]
+            top_demoras_informe['Tiempo (horas)'] = top_demoras_informe['Tiempo (min)'] / 60
 
-        # Ranking OC por tiempos
-        if 'codigo_oc' in df_tiempos.columns:
-            media_global = df_tiempos['tiempo_anotacion_min'].mean()
-            ranking_oc_tiempos_informe = df_tiempos.groupby('codigo_oc').agg({
-                'tiempo_anotacion_min': 'mean',
-                'id_fra_rcf': 'count'
-            }).round(2).reset_index()
-            ranking_oc_tiempos_informe.columns = ['Código OC', 'Tiempo Medio (min)', 'Nº Facturas']
-            ranking_oc_tiempos_informe['Diferencia vs Media (%)'] = (
-                (ranking_oc_tiempos_informe['Tiempo Medio (min)'] - media_global) / media_global * 100
-            ).round(2)
-            ranking_oc_tiempos_informe = ranking_oc_tiempos_informe.sort_values('Tiempo Medio (min)', ascending=False).head(10)
+            # Stats mensuales (solo datos válidos)
+            df_tiempos_validos['mes'] = pd.to_datetime(df_tiempos_validos['fecha_anotacion_rcf']).dt.to_period('M').astype(str)
+            stats_mensuales_informe = df_tiempos_validos.groupby('mes')['tiempo_anotacion_min'].agg([
+                'mean', 'median', 'min', 'max', 'count'
+            ]).reset_index()
+            stats_mensuales_informe.columns = ['Mes', 'Media', 'Mediana', 'Mínimo', 'Máximo', 'Nº Facturas']
 
-        # Ranking UT por tiempos
-        if 'codigo_ut' in df_tiempos.columns:
-            ranking_ut_tiempos_informe = df_tiempos.groupby('codigo_ut').agg({
-                'tiempo_anotacion_min': 'mean',
-                'id_fra_rcf': 'count'
-            }).round(2).reset_index()
-            ranking_ut_tiempos_informe.columns = ['Código UT', 'Tiempo Medio (min)', 'Nº Facturas']
-            ranking_ut_tiempos_informe['Diferencia vs Media (%)'] = (
-                (ranking_ut_tiempos_informe['Tiempo Medio (min)'] - media_global) / media_global * 100
-            ).round(2)
-            ranking_ut_tiempos_informe = ranking_ut_tiempos_informe.sort_values('Tiempo Medio (min)', ascending=False).head(10)
+            # Ranking OC por tiempos (solo datos válidos)
+            if 'codigo_oc' in df_tiempos_validos.columns:
+                media_global = df_tiempos_validos['tiempo_anotacion_min'].mean()
+                ranking_oc_tiempos_informe = df_tiempos_validos.groupby('codigo_oc').agg({
+                    'tiempo_anotacion_min': 'mean',
+                    'id_fra_rcf': 'count'
+                }).round(2).reset_index()
+                ranking_oc_tiempos_informe.columns = ['Código OC', 'Tiempo Medio (min)', 'Nº Facturas']
+                ranking_oc_tiempos_informe['Diferencia vs Media (%)'] = (
+                    (ranking_oc_tiempos_informe['Tiempo Medio (min)'] - media_global) / media_global * 100
+                ).round(2)
+                ranking_oc_tiempos_informe = ranking_oc_tiempos_informe.sort_values('Tiempo Medio (min)', ascending=False).head(10)
+
+            # Ranking UT por tiempos (solo datos válidos)
+            if 'codigo_ut' in df_tiempos_validos.columns:
+                ranking_ut_tiempos_informe = df_tiempos_validos.groupby('codigo_ut').agg({
+                    'tiempo_anotacion_min': 'mean',
+                    'id_fra_rcf': 'count'
+                }).round(2).reset_index()
+                ranking_ut_tiempos_informe.columns = ['Código UT', 'Tiempo Medio (min)', 'Nº Facturas']
+                ranking_ut_tiempos_informe['Diferencia vs Media (%)'] = (
+                    (ranking_ut_tiempos_informe['Tiempo Medio (min)'] - media_global) / media_global * 100
+                ).round(2)
+                ranking_ut_tiempos_informe = ranking_ut_tiempos_informe.sort_values('Tiempo Medio (min)', ascending=False).head(10)
+
+        # Preparar anomalías para informe
+        if num_anomalias_informe > 0:
+            cols_anom = ['entidad', 'id_fra_rcf', 'numero_factura', 'nif_emisor',
+                        'fecha_registro_face', 'fecha_anotacion_rcf', 'tiempo_anotacion_min']
+            cols_disp = [c for c in cols_anom if c in df_anomalias_temp.columns]
+            df_anomalias_informe = df_anomalias_temp[cols_disp].copy()
+
+    # Calcular métricas de tiempos válidos para el informe
+    tiempo_medio = 0
+    tiempo_mediano = 0
+    tiempo_max = 0
+    tiempo_min = 0
+
+    if len(df_tiempos_total) > 0:
+        df_validos_temp = df_tiempos_total[df_tiempos_total['tiempo_anotacion_min'] >= 0]
+        if len(df_validos_temp) > 0:
+            tiempo_medio = df_validos_temp['tiempo_anotacion_min'].mean()
+            tiempo_mediano = df_validos_temp['tiempo_anotacion_min'].median()
+            tiempo_max = df_validos_temp['tiempo_anotacion_min'].max()
+            tiempo_min = df_validos_temp['tiempo_anotacion_min'].min()
 
     st.session_state['analisis']['anotacion'] = {
         'facturas_retenidas': len(df_retenidas),
         'df_retenidas': df_retenidas_informe,
-        'tiempo_medio_min': df_tiempos['tiempo_anotacion_min'].mean() if len(df_tiempos) > 0 else 0,
-        'tiempo_mediano_min': df_tiempos['tiempo_anotacion_min'].median() if len(df_tiempos) > 0 else 0,
-        'tiempo_max_min': df_tiempos['tiempo_anotacion_min'].max() if len(df_tiempos) > 0 else 0,
-        'tiempo_min_min': df_tiempos['tiempo_anotacion_min'].min() if len(df_tiempos) > 0 else 0,
+        'tiempo_medio_min': tiempo_medio,
+        'tiempo_mediano_min': tiempo_mediano,
+        'tiempo_max_min': tiempo_max,
+        'tiempo_min_min': tiempo_min,
         'top_demoras': top_demoras_informe,
         'stats_mensuales': stats_mensuales_informe,
         'ranking_oc_tiempos': ranking_oc_tiempos_informe,
-        'ranking_ut_tiempos': ranking_ut_tiempos_informe
+        'ranking_ut_tiempos': ranking_ut_tiempos_informe,
+        'num_anomalias': num_anomalias_informe,
+        'df_anomalias': df_anomalias_informe
     }
 
 if __name__ == "__main__":

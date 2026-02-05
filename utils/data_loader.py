@@ -15,7 +15,8 @@ MAPEO_COLUMNAS = {
         'entidad': ['entidad', 'ENTIDAD', 'Entidad'],
         'ID_FACE': ['ID_FACE', 'id_face', 'ID FACE', 'Nº Registro FACe', 'registro_face'],
         'fecha_emision': ['fecha_emision', 'fecha_expedicion', 'Fecha', 'fecha', 'Fecha Expedición', 'FECHA EXP. FRA.'],
-        'fecha_anotacion_rcf': ['Fecha registro', 'fecha_anotacion_rcf', 'fecha_anotacion', 'Fecha Anotación', 'fecha_registro', 'FECHA REGISTRO', 'F. DE GRABACIÓN DE LA OPER.'],
+        'fecha_registro_face': ['fecha_registro_face', 'FECHA REG. EN FACE', 'Fecha Reg. en FACe', 'fecha_reg_face'],
+        'fecha_anotacion_rcf': ['fecha_anotacion_rcf', 'FECHA REGISTRO', 'Fecha registro', 'fecha_anotacion', 'Fecha Anotación', 'fecha_registro', 'F. DE GRABACIÓN DE LA OPER.'],
         'nif_emisor': ['nif_emisor', 'NIF', 'nif', 'CIF', 'cif', 'NIF Emisor', 'NIF/CIF'],
         'razon_social': ['razon_social', 'nombre', 'Razón Social', 'Nombre', 'proveedor', 'NOMBRE/RAZÓN SOCIAL'],
         'numero_factura': ['numero_factura', 'numero', 'Número', 'Nº Factura', 'num_factura', 'N_FRA'],
@@ -75,21 +76,34 @@ def encontrar_columna(df: pd.DataFrame, nombre_estandar: str, tipo_archivo: str)
 
 def normalizar_columnas(df: pd.DataFrame, tipo_archivo: str) -> pd.DataFrame:
     """
-    Renombra las columnas del DataFrame a nombres estándar
+    Renombra las columnas del DataFrame a nombres estándar.
+    Incluye limpieza de espacios extra y comparación case-insensitive.
     """
     df_normalizado = df.copy()
     mapeo = {}
-    
+
+    # Crear un diccionario de columnas normalizadas (sin espacios extra, lowercase)
+    columnas_df_norm = {col.strip().lower(): col for col in df.columns}
+
     if tipo_archivo in MAPEO_COLUMNAS:
         for nombre_estandar, posibles_nombres in MAPEO_COLUMNAS[tipo_archivo].items():
+            # Primero intentar coincidencia exacta
             for nombre_posible in posibles_nombres:
                 if nombre_posible in df.columns:
                     mapeo[nombre_posible] = nombre_estandar
                     break
-    
+            else:
+                # Si no hay coincidencia exacta, intentar con normalización
+                for nombre_posible in posibles_nombres:
+                    nombre_norm = nombre_posible.strip().lower()
+                    if nombre_norm in columnas_df_norm:
+                        col_original = columnas_df_norm[nombre_norm]
+                        mapeo[col_original] = nombre_estandar
+                        break
+
     if mapeo:
         df_normalizado = df_normalizado.rename(columns=mapeo)
-    
+
     return df_normalizado
 
 @st.cache_data
@@ -117,7 +131,7 @@ def cargar_datos(archivo_rcf, archivo_face, archivo_anulaciones, archivo_estados
         df_estados = normalizar_columnas(df_estados, 'estados')
         
         # Convertir fechas
-        df_rcf = convertir_fechas(df_rcf, ['fecha_emision', 'fecha_anotacion_rcf'])
+        df_rcf = convertir_fechas(df_rcf, ['fecha_emision', 'fecha_anotacion_rcf', 'fecha_registro_face'])
         df_face = convertir_fechas(df_face, ['fecha_registro'])
         df_anulaciones = convertir_fechas(df_anulaciones, ['fecha_solicitud_anulacion'])
         df_estados = convertir_fechas(df_estados, ['insertado'])
@@ -212,12 +226,14 @@ def cargar_datos(archivo_rcf, archivo_face, archivo_anulaciones, archivo_estados
 
 def convertir_fechas(df: pd.DataFrame, columnas: List[str]) -> pd.DataFrame:
     """
-    Convierte columnas a formato fecha
+    Convierte columnas a formato fecha.
+    Usa formato europeo (día primero: DD/MM/YYYY) por defecto.
     """
     for col in columnas:
         if col in df.columns:
             try:
-                df[col] = pd.to_datetime(df[col], errors='coerce')
+                # Usar dayfirst=True para formato europeo DD/MM/YYYY
+                df[col] = pd.to_datetime(df[col], dayfirst=True, errors='coerce')
             except:
                 pass
     return df
@@ -396,40 +412,46 @@ def obtener_facturas_papel_sospechosas(df_rcf: pd.DataFrame) -> pd.DataFrame:
 
     return df_sospechoso
 
-def calcular_tiempos_anotacion(df_rcf: pd.DataFrame, df_face: pd.DataFrame) -> pd.DataFrame:
+def calcular_tiempos_anotacion(df_rcf: pd.DataFrame, df_face: pd.DataFrame = None) -> pd.DataFrame:
     """
-    Calcula los tiempos de anotación en RCF desde FACe
+    Calcula los tiempos de anotación en RCF desde FACe.
+
+    Usa directamente las columnas del RCF:
+    - fecha_registro_face: Fecha de registro en FACe (columna "FECHA REG. EN FACE")
+    - fecha_anotacion_rcf: Fecha de anotación en RCF (columna "FECHA REGISTRO")
+
+    El tiempo de anotación = fecha_anotacion_rcf - fecha_registro_face
     """
-    # Verificar columnas necesarias
-    if 'ID_FACE' not in df_rcf.columns or 'registro' not in df_face.columns:
+    # Verificar columnas necesarias en el RCF
+    if 'fecha_anotacion_rcf' not in df_rcf.columns:
         return pd.DataFrame()
-    
-    # Merge de facturas electrónicas
-    # Renombramos fecha_registro a fecha_registro_face para evitar confusión
-    df_merge = df_rcf[df_rcf['es_papel'] == False].merge(
-        df_face[['registro', 'fecha_registro']],
-        left_on='ID_FACE',
-        right_on='registro',
-        how='left'
-    ).rename(columns={'fecha_registro': 'fecha_registro_face'})
-    
-    # Verificar que existan las columnas de fecha
-    if 'fecha_anotacion_rcf' not in df_merge.columns or 'fecha_registro_face' not in df_merge.columns:
+
+    # Filtrar solo facturas electrónicas (no papel)
+    df_trabajo = df_rcf[df_rcf['es_papel'] == False].copy()
+
+    # Verificar si tenemos la fecha de registro en FACe directamente en el RCF
+    if 'fecha_registro_face' in df_trabajo.columns:
+        # Usar directamente las columnas del RCF (método preferido)
+        df_resultado = df_trabajo.dropna(subset=['fecha_anotacion_rcf', 'fecha_registro_face']).copy()
+    elif df_face is not None and 'registro' in df_face.columns and 'ID_FACE' in df_trabajo.columns:
+        # Fallback: hacer merge con archivo FACe si no hay columna en RCF
+        df_resultado = df_trabajo.merge(
+            df_face[['registro', 'fecha_registro']],
+            left_on='ID_FACE',
+            right_on='registro',
+            how='left'
+        ).rename(columns={'fecha_registro': 'fecha_registro_face'})
+        df_resultado = df_resultado.dropna(subset=['fecha_anotacion_rcf', 'fecha_registro_face']).copy()
+    else:
         return pd.DataFrame()
-    
-    # Limpieza: Si fecha_anotacion_rcf es nula, no podemos calcular
-    df_merge = df_merge.dropna(subset=['fecha_anotacion_rcf', 'fecha_registro_face']).copy()
-    
-    # Calcular diferencia en minutos (Anotación - Registro en FACe)
-    # Si sale negativo, es que la fecha de anotación es anterior (error de datos)
-    df_merge['tiempo_anotacion_min'] = (
-        df_merge['fecha_anotacion_rcf'] - df_merge['fecha_registro_face']
+
+    # Calcular diferencia en minutos (Anotación en RCF - Registro en FACe)
+    # Resultado positivo = tiempo que tardó en anotarse en RCF después de llegar a FACe
+    df_resultado['tiempo_anotacion_min'] = (
+        df_resultado['fecha_anotacion_rcf'] - df_resultado['fecha_registro_face']
     ).dt.total_seconds() / 60
-    
-    # Filtrar outliers o errores absurdos (tiempos negativos) para métricas limpias
-    # Pero los mantenemos si el usuario quiere auditar errores de sistema
-    
-    return df_merge
+
+    return df_resultado
 
 def identificar_facturas_retenidas(df_face: pd.DataFrame, df_rcf: pd.DataFrame, ids_precalculados=None) -> pd.DataFrame:
     """
