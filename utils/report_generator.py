@@ -255,6 +255,116 @@ La presente auditoria se realiza en cumplimiento de la siguiente normativa:
     # ============================================
     doc.add_heading('3. ANALISIS DE FACTURAS EN PAPEL (Seccion V.1)', 1)
 
+    # Párrafo introductorio: misma cascada que el Resumen Ejecutivo de app.py
+    df_rcf_total_inf  = datos['rcf']
+    total_rcf_inf     = len(df_rcf_total_inf)
+    df_borradas_inf   = df_rcf_total_inf[df_rcf_total_inf['estado'].astype(str).str.upper() == 'BORRADA']
+    total_borradas_inf  = len(df_borradas_inf)
+    borradas_elec_inf   = len(df_borradas_inf[df_borradas_inf['es_papel'] == False])
+    borradas_papel_inf  = len(df_borradas_inf[df_borradas_inf['es_papel'] == True])
+    porc_borradas_inf   = (total_borradas_inf / total_rcf_inf * 100) if total_rcf_inf > 0 else 0
+    df_vivas_inf      = df_rcf_total_inf[df_rcf_total_inf['estado'].astype(str).str.upper() != 'BORRADA']
+    total_vivas_inf   = len(df_vivas_inf)
+    df_elec_rcf_inf   = df_vivas_inf[df_vivas_inf['es_papel'] == False]
+    df_papel_rcf_inf  = df_vivas_inf[df_vivas_inf['es_papel'] == True]
+    n_elec_rcf_inf    = len(df_elec_rcf_inf)
+    n_papel_rcf_inf   = len(df_papel_rcf_inf)
+    porc_elec_inf  = (n_elec_rcf_inf  / total_vivas_inf * 100) if total_vivas_inf > 0 else 0
+    porc_papel_inf = (n_papel_rcf_inf / total_vivas_inf * 100) if total_vivas_inf > 0 else 0
+    n_face_anul_inf = len(datos.get('face_anuladas_antes_rcf', pd.DataFrame()))
+    estados_neg = ['RECHAZADA', 'ANULADA']
+    elec_neg_inf  = len(df_elec_rcf_inf[df_elec_rcf_inf['estado'].astype(str).str.upper().isin(estados_neg)])
+    elec_tram_inf = n_elec_rcf_inf - elec_neg_inf
+    papel_neg_inf  = len(df_papel_rcf_inf[df_papel_rcf_inf['estado'].astype(str).str.upper().isin(estados_neg)])
+    papel_tram_inf = n_papel_rcf_inf - papel_neg_inf
+
+    # Párrafo: total bruto, borradas absorbidas en "rechazadas/anuladas"
+    df_elec_all_inf  = df_rcf_total_inf[df_rcf_total_inf['es_papel'] == False]
+    df_papel_all_inf = df_rcf_total_inf[df_rcf_total_inf['es_papel'] == True]
+    n_elec_all_inf   = len(df_elec_all_inf)
+    n_papel_all_inf  = len(df_papel_all_inf)
+    porc_elec_p_inf  = (n_elec_all_inf  / total_rcf_inf * 100) if total_rcf_inf > 0 else 0
+    porc_papel_p_inf = (n_papel_all_inf / total_rcf_inf * 100) if total_rcf_inf > 0 else 0
+    estados_neg_p = ['BORRADA', 'RECHAZADA', 'ANULADA']
+    elec_neg_p_inf  = len(df_elec_all_inf[df_elec_all_inf['estado'].astype(str).str.upper().isin(estados_neg_p)])
+    elec_tram_p_inf = n_elec_all_inf - elec_neg_p_inf
+    papel_neg_p_inf  = len(df_papel_all_inf[df_papel_all_inf['estado'].astype(str).str.upper().isin(estados_neg_p)])
+    papel_tram_p_inf = n_papel_all_inf - papel_neg_p_inf
+
+    frase_anuladas = (
+        f" Adicionalmente, {n_face_anul_inf:,} facturas registradas en FACe fueron anuladas "
+        f"antes de su descarga al RCF."
+        if n_face_anul_inf > 0 else ""
+    )
+    parrafo_intro = (
+        f"Entrando ya a exponer los resultados arrojados por las pruebas realizadas con respecto al presente "
+        f"apartado lo primero a resenar es que de los datos proporcionados por el RCF para el ejercicio "
+        f"{CONFIGURACION['ejercicio_auditado']} se desprende la recepcion de un total de {total_rcf_inf:,} "
+        f"facturas, de las cuales {n_elec_all_inf:,} ({porc_elec_p_inf:.2f}%) han sido recibidas por FACe "
+        f"en formato electronico y {n_papel_all_inf:,} ({porc_papel_p_inf:.2f}%) han sido recibidas en "
+        f"papel.{frase_anuladas} "
+        f"Desglosando el total de facturas en funcion de su estado de tramitacion, de las "
+        f"{n_elec_all_inf:,} facturas electronicas, {elec_neg_p_inf:,} se encuentran rechazadas/anuladas y "
+        f"{elec_tram_p_inf:,} se encuentran en tramitacion o han sido pagadas, y de las "
+        f"{n_papel_all_inf:,} facturas recibidas en papel, {papel_neg_p_inf:,} se encuentran rechazadas y "
+        f"{papel_tram_p_inf:,} se encuentran en tramitacion o han sido pagadas."
+    )
+    doc.add_paragraph(parrafo_intro)
+
+    # Cuadro de desglose por entidad (facturas vivas)
+    if 'entidad' in df_vivas_inf.columns:
+        doc.add_heading('Desglose de facturas vivas por entidad', level=3)
+
+        tabla_ent = (
+            df_vivas_inf.groupby('entidad')
+            .apply(lambda g: pd.Series({
+                'Facturas FACe':  int((g['es_papel'] == False).sum()),
+                'Facturas Papel': int((g['es_papel'] == True).sum()),
+            }))
+            .reset_index()
+            .rename(columns={'entidad': 'Entidad'})
+        )
+        tabla_ent['Total'] = tabla_ent['Facturas FACe'] + tabla_ent['Facturas Papel']
+        tabla_ent = tabla_ent.sort_values('Total', ascending=False)
+
+        encabezados = ['Entidad', 'Facturas FACe', 'Facturas Papel', 'Total']
+        tbl = doc.add_table(rows=1, cols=len(encabezados))
+        tbl.style = 'Table Grid'
+        tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+
+        # Cabecera
+        hdr = tbl.rows[0].cells
+        for i, h in enumerate(encabezados):
+            hdr[i].text = h
+            hdr[i].paragraphs[0].runs[0].bold = True
+            set_cell_shading(hdr[i], '0066CC')
+            hdr[i].paragraphs[0].runs[0].font.color.rgb = RGBColor(255, 255, 255)
+
+        # Filas de datos
+        for _, row in tabla_ent.iterrows():
+            cells = tbl.add_row().cells
+            cells[0].text = str(row['Entidad'])
+            cells[1].text = f"{int(row['Facturas FACe']):,}"
+            cells[2].text = f"{int(row['Facturas Papel']):,}"
+            cells[3].text = f"{int(row['Total']):,}"
+
+        # Fila de totales
+        total_row = tbl.add_row().cells
+        total_row[0].text = 'TOTAL'
+        total_row[0].paragraphs[0].runs[0].bold = True
+        total_row[1].text = f"{int(tabla_ent['Facturas FACe'].sum()):,}"
+        total_row[1].paragraphs[0].runs[0].bold = True
+        total_row[2].text = f"{int(tabla_ent['Facturas Papel'].sum()):,}"
+        total_row[2].paragraphs[0].runs[0].bold = True
+        total_row[3].text = f"{int(tabla_ent['Total'].sum()):,}"
+        total_row[3].paragraphs[0].runs[0].bold = True
+        set_cell_shading(total_row[0], 'D9E1F2')
+        set_cell_shading(total_row[1], 'D9E1F2')
+        set_cell_shading(total_row[2], 'D9E1F2')
+        set_cell_shading(total_row[3], 'D9E1F2')
+
+        doc.add_paragraph()
+
     doc.add_paragraph("""
 Segun el articulo 4 de la Ley 25/2013, la factura electronica es obligatoria para las personas juridicas
 y para facturas de importe superior a 3.000 euros (base imponible). Se analizan las facturas en papel

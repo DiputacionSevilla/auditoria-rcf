@@ -195,19 +195,19 @@ def main():
     
     st.markdown("---")
     
-    # === TOP 10 POR IMPORTE ===
-    st.markdown("### 💰 Top 10 Facturas por Importe")
-    
+    # === TODAS LAS FACTURAS SOSPECHOSAS POR IMPORTE ===
+    st.markdown("### 💰 Facturas Sospechosas por Importe")
+
     if len(facturas_sospechosas) > 0:
-        top_10 = facturas_sospechosas.nlargest(10, 'base_imponible')[[
+        tabla_sospechosas = facturas_sospechosas.sort_values('base_imponible', ascending=False)[[
             'entidad', 'id_fra_rcf', 'numero_factura', 'fecha_emision', 'nif_emisor', 'razon_social',
             'base_imponible', 'importe_total', 'codigo_oc'
         ]].copy()
-        
-        top_10.columns = ['Entidad', 'ID RCF', 'Nº Factura', 'Fecha', 'NIF', 'Razón Social', 'Base Imponible (€)', 'Total (€)', 'OC']
-        
+
+        tabla_sospechosas.columns = ['Entidad', 'ID RCF', 'Nº Factura', 'Fecha', 'NIF', 'Razón Social', 'Base Imponible (€)', 'Total (€)', 'OC']
+
         st.dataframe(
-            top_10.style.format({
+            tabla_sospechosas.style.format({
                 'Base Imponible (€)': '{:,.2f}',
                 'Total (€)': '{:,.2f}',
                 'Fecha': lambda x: x.strftime('%d/%m/%Y') if pd.notna(x) else ''
@@ -215,14 +215,14 @@ def main():
             width="stretch",
             hide_index=True
         )
-        
+
         # Botón exportar
-        if st.button("📥 Exportar Top 10 a Excel"):
-            excel_bytes = exportar_a_excel(top_10, "Top_10_Facturas_Papel")
+        if st.button("📥 Exportar Todas a Excel"):
+            excel_bytes = exportar_a_excel(tabla_sospechosas, "Facturas_Papel_Sospechosas_Importe")
             st.download_button(
                 label="Descargar Excel",
                 data=excel_bytes,
-                file_name="top_10_facturas_papel.xlsx",
+                file_name="facturas_papel_sospechosas_importe.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
     
@@ -399,7 +399,7 @@ def main():
         'total_papel': len(facturas_papel),
         'total_sospechosas': len(facturas_sospechosas),
         'importe_sospechoso': facturas_sospechosas['base_imponible'].sum() if len(facturas_sospechosas) > 0 else 0,
-        'top_10_importe': top_10 if len(facturas_sospechosas) > 0 else pd.DataFrame(),
+        'top_10_importe': tabla_sospechosas if len(facturas_sospechosas) > 0 else pd.DataFrame(),
         'top_proveedores': top_proveedores_informe,
         'ranking_oc': ranking_oc_informe,
         'ranking_ut': ranking_ut_informe,

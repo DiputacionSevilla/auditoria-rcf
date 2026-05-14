@@ -454,7 +454,153 @@ def main():
         st.warning("No se pueden calcular las facturas de años anteriores por falta de columnas de fecha.")
     
     st.markdown("---")
-    
+
+    # === RESUMEN PARA INFORME ===
+    st.markdown("### 📝 Resumen para el Informe de Auditoría")
+    st.info(
+        "Los datos corresponden al **ejercicio completo** (sin filtros de fecha ni oficina), "
+        "partiendo de los mismos totales que el Resumen Ejecutivo de la página principal."
+    )
+
+    # Nivel 1: total bruto RCF (igual que Resumen Ejecutivo en app.py)
+    df_rcf_total = datos['rcf']
+    total_rcf    = len(df_rcf_total)
+
+    df_borradas      = df_rcf_total[df_rcf_total['estado'].astype(str).str.upper() == 'BORRADA']
+    total_borradas   = len(df_borradas)
+    borradas_elec    = len(df_borradas[df_borradas['es_papel'] == False])
+    borradas_papel   = len(df_borradas[df_borradas['es_papel'] == True])
+    porc_borradas    = (total_borradas / total_rcf * 100) if total_rcf > 0 else 0
+
+    df_vivas     = df_rcf_total[df_rcf_total['estado'].astype(str).str.upper() != 'BORRADA']
+    total_vivas  = len(df_vivas)
+    n_anulaciones = len(datos['anulaciones'])
+
+    # Nivel 2: desglose de vivas en electrónicas / papel
+    df_elec_rcf  = df_vivas[df_vivas['es_papel'] == False]
+    df_papel_rcf = df_vivas[df_vivas['es_papel'] == True]
+    n_elec_rcf   = len(df_elec_rcf)
+    n_papel_rcf  = len(df_papel_rcf)
+    porc_elec_inf  = (n_elec_rcf  / total_vivas * 100) if total_vivas > 0 else 0
+    porc_papel_inf = (n_papel_rcf / total_vivas * 100) if total_vivas > 0 else 0
+
+    # Nivel 3: desglose de estados (rechazadas/anuladas vs en tramitación)
+    estados_neg = ['RECHAZADA', 'ANULADA']
+    elec_neg   = len(df_elec_rcf[df_elec_rcf['estado'].astype(str).str.upper().isin(estados_neg)])
+    elec_tram  = n_elec_rcf - elec_neg
+    papel_neg  = len(df_papel_rcf[df_papel_rcf['estado'].astype(str).str.upper().isin(estados_neg)])
+    papel_tram = n_papel_rcf - papel_neg
+
+    # Adicional: anuladas en FACe antes de llegar al RCF
+    n_face_anuladas = len(datos.get('face_anuladas_antes_rcf', pd.DataFrame()))
+
+    # --- Métricas en cascada ---
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total Registros RCF", f"{total_rcf:,}")
+        st.metric("Facturas Borradas (total)", f"{total_borradas:,}", f"{porc_borradas:.1f}%",
+                  delta_color="inverse")
+        st.metric("↳ Borradas electrónicas (FACe)", f"{borradas_elec:,}")
+        st.metric("↳ Borradas en papel", f"{borradas_papel:,}")
+        st.metric("Facturas Vivas", f"{total_vivas:,}")
+        st.metric("Anulaciones (FACe)", f"{n_anulaciones:,}")
+        if n_face_anuladas > 0:
+            st.metric("Anuladas en FACe antes del RCF", f"{n_face_anuladas:,}")
+    with col2:
+        st.metric("Electrónicas vivas (FACe → RCF)", f"{n_elec_rcf:,}", f"{porc_elec_inf:.1f}% s/vivas")
+        st.metric("↳ Rechazadas/anuladas", f"{elec_neg:,}")
+        st.metric("↳ En tramitación o pagadas", f"{elec_tram:,}")
+    with col3:
+        st.metric("En papel vivas", f"{n_papel_rcf:,}", f"{porc_papel_inf:.1f}% s/vivas")
+        st.metric("↳ Rechazadas/anuladas", f"{papel_neg:,}")
+        st.metric("↳ En tramitación o pagadas", f"{papel_tram:,}")
+
+    # --- Cuadro de desglose por entidad ---
+    st.markdown("#### Desglose de facturas vivas por entidad")
+    if 'entidad' in df_vivas.columns:
+        tabla_entidad = (
+            df_vivas.groupby('entidad')
+            .apply(lambda g: pd.Series({
+                'Facturas FACe':  int((g['es_papel'] == False).sum()),
+                'Facturas Papel': int((g['es_papel'] == True).sum()),
+            }))
+            .reset_index()
+            .rename(columns={'entidad': 'Entidad'})
+        )
+        tabla_entidad['Total'] = tabla_entidad['Facturas FACe'] + tabla_entidad['Facturas Papel']
+        tabla_entidad = tabla_entidad.sort_values('Total', ascending=False)
+
+        # Fila de totales
+        fila_total = pd.DataFrame([{
+            'Entidad': 'TOTAL',
+            'Facturas FACe':  tabla_entidad['Facturas FACe'].sum(),
+            'Facturas Papel': tabla_entidad['Facturas Papel'].sum(),
+            'Total':          tabla_entidad['Total'].sum(),
+        }])
+        tabla_display = pd.concat([tabla_entidad, fila_total], ignore_index=True)
+
+        st.dataframe(
+            tabla_display.style.format({
+                'Facturas FACe':  '{:,}',
+                'Facturas Papel': '{:,}',
+                'Total':          '{:,}',
+            }).apply(
+                lambda x: ['font-weight: bold'] * len(x)
+                if x['Entidad'] == 'TOTAL' else [''] * len(x),
+                axis=1
+            ),
+            hide_index=True,
+            width="stretch",
+        )
+    else:
+        st.info("La columna 'entidad' no está disponible en los datos del RCF.")
+
+    # --- Cálculos para el párrafo (total bruto, borradas absorbidas en el desglose) ---
+    # El párrafo parte del total bruto y desglosa estados sobre el total (incluyendo borradas)
+    df_elec_all  = df_rcf_total[df_rcf_total['es_papel'] == False]
+    df_papel_all = df_rcf_total[df_rcf_total['es_papel'] == True]
+    n_elec_all   = len(df_elec_all)
+    n_papel_all  = len(df_papel_all)
+    porc_elec_p  = (n_elec_all  / total_rcf * 100) if total_rcf > 0 else 0
+    porc_papel_p = (n_papel_all / total_rcf * 100) if total_rcf > 0 else 0
+
+    # Estados negativos: BORRADA + RECHAZADA + ANULADA (se agrupan en "rechazadas/anuladas")
+    estados_neg_p = ['BORRADA', 'RECHAZADA', 'ANULADA']
+    elec_neg_p   = len(df_elec_all[df_elec_all['estado'].astype(str).str.upper().isin(estados_neg_p)])
+    elec_tram_p  = n_elec_all - elec_neg_p
+    papel_neg_p  = len(df_papel_all[df_papel_all['estado'].astype(str).str.upper().isin(estados_neg_p)])
+    papel_tram_p = n_papel_all - papel_neg_p
+
+    # --- Párrafo listo para copiar ---
+    ejercicio = CONFIGURACION.get('ejercicio_auditado', '2025')
+    frase_anuladas_face = (
+        f" Adicionalmente, {n_face_anuladas:,} facturas registradas en FACe fueron anuladas "
+        f"antes de su descarga al RCF."
+        if n_face_anuladas > 0 else ""
+    )
+    parrafo = (
+        f"Entrando ya a exponer los resultados arrojados por las pruebas realizadas con respecto al presente "
+        f"apartado lo primero a reseñar es que de los datos proporcionados por el RCF para el ejercicio "
+        f"{ejercicio} se desprende la recepción de un total de {total_rcf:,} facturas, de las cuales "
+        f"{n_elec_all:,} ({porc_elec_p:.2f}%) han sido recibidas por FACe en formato electrónico y "
+        f"{n_papel_all:,} ({porc_papel_p:.2f}%) han sido recibidas en papel.{frase_anuladas_face} "
+        f"Desglosando el total de facturas en función de su estado de tramitación, de las "
+        f"{n_elec_all:,} facturas electrónicas, {elec_neg_p:,} se encuentran rechazadas/anuladas y "
+        f"{elec_tram_p:,} se encuentran en tramitación o han sido pagadas, y de las {n_papel_all:,} "
+        f"facturas recibidas en papel, {papel_neg_p:,} se encuentran rechazadas y "
+        f"{papel_tram_p:,} se encuentran en tramitación o han sido pagadas."
+    )
+
+    st.markdown("**Párrafo para el informe** (selecciona el texto y cópialo):")
+    st.text_area(
+        label="Párrafo",
+        value=parrafo,
+        height=220,
+        label_visibility="collapsed"
+    )
+
+    st.markdown("---")
+
     # Navegación
     st.markdown("### 🧭 Ir a Análisis Detallado")
     

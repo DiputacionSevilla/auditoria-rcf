@@ -211,12 +211,30 @@ def cargar_datos(archivo_rcf, archivo_face, archivo_anulaciones, archivo_estados
         else:
             ids_face_en_rcf_total = set(df_rcf[df_rcf['ID_FACE'].notna()]['ID_FACE'].astype(str))
         
+        # Identificar facturas de FACe anuladas antes de llegar al RCF:
+        # condición: tienen solicitud de anulación Y no aparecen en ningún ejercicio del RCF
+        ids_anuladas_face = (
+            set(df_anulaciones['registro'].astype(str))
+            if 'registro' in df_anulaciones.columns
+            else set()
+        )
+        if 'registro' in df_face.columns:
+            face_ids = df_face['registro'].astype(str)
+            mask_anulada = (
+                ~face_ids.isin(ids_face_en_rcf_total) &
+                face_ids.isin(ids_anuladas_face)
+            )
+            df_face_anuladas_antes_rcf = df_face[mask_anulada].copy()
+        else:
+            df_face_anuladas_antes_rcf = pd.DataFrame()
+
         return {
             'rcf': df_rcf,
             'face': df_face,
             'anulaciones': df_anulaciones,
             'estados': df_estados,
-            'ids_face_en_rcf_total': ids_face_en_rcf_total
+            'ids_face_en_rcf_total': ids_face_en_rcf_total,
+            'face_anuladas_antes_rcf': df_face_anuladas_antes_rcf
         }
         
     except Exception as e:
