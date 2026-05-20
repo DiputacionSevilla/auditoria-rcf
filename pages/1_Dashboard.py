@@ -516,44 +516,92 @@ def main():
         st.metric("↳ En tramitación o pagadas", f"{papel_tram:,}")
 
     # --- Cuadro de desglose por entidad ---
-    st.markdown("#### Desglose de facturas vivas por entidad")
-    if 'entidad' in df_vivas.columns:
+    st.markdown("#### Distribución según las distintas entidades (eliminando las facturas rechazadas)")
+    if 'entidad' in df_rcf_total.columns:
+        estados_neg = ['BORRADA', 'RECHAZADA', 'ANULADA']
+
+        def _fila_entidad(g):
+            papel = g[g['es_papel'] == True]
+            face  = g[g['es_papel'] == False]
+            papel_neg = papel['estado'].astype(str).str.upper().isin(estados_neg)
+            face_neg  = face['estado'].astype(str).str.upper().isin(estados_neg)
+            p_tram = int((~papel_neg).sum())
+            p_anul = int(papel_neg.sum())
+            f_tram = int((~face_neg).sum())
+            f_anul = int(face_neg.sum())
+            total  = p_tram + p_anul + f_tram + f_anul
+            porc   = (p_tram + p_anul) / total * 100 if total > 0 else 0
+            return pd.Series({
+                'Total':      total,
+                'Papel_Tram': p_tram,
+                'Papel_Anul': p_anul,
+                'Face_Tram':  f_tram,
+                'Face_Anul':  f_anul,
+                'Porc_Papel': porc,
+            })
+
         tabla_entidad = (
-            df_vivas.groupby('entidad')
-            .apply(lambda g: pd.Series({
-                'Facturas FACe':  int((g['es_papel'] == False).sum()),
-                'Facturas Papel': int((g['es_papel'] == True).sum()),
-            }))
+            df_rcf_total.groupby('entidad')
+            .apply(_fila_entidad)
             .reset_index()
             .rename(columns={'entidad': 'Entidad'})
+            .sort_values('Total', ascending=False)
         )
-        tabla_entidad['Total'] = tabla_entidad['Facturas FACe'] + tabla_entidad['Facturas Papel']
-        tabla_entidad = tabla_entidad.sort_values('Total', ascending=False)
 
-        # Fila de totales
-        fila_total = pd.DataFrame([{
-            'Entidad': 'TOTAL',
-            'Facturas FACe':  tabla_entidad['Facturas FACe'].sum(),
-            'Facturas Papel': tabla_entidad['Facturas Papel'].sum(),
-            'Total':          tabla_entidad['Total'].sum(),
-        }])
-        tabla_display = pd.concat([tabla_entidad, fila_total], ignore_index=True)
+        tot = {
+            'Entidad':    'Totales',
+            'Total':      int(tabla_entidad['Total'].sum()),
+            'Papel_Tram': int(tabla_entidad['Papel_Tram'].sum()),
+            'Papel_Anul': int(tabla_entidad['Papel_Anul'].sum()),
+            'Face_Tram':  int(tabla_entidad['Face_Tram'].sum()),
+            'Face_Anul':  int(tabla_entidad['Face_Anul'].sum()),
+        }
+        tot_papel = tot['Papel_Tram'] + tot['Papel_Anul']
+        tot['Porc_Papel'] = tot_papel / tot['Total'] * 100 if tot['Total'] > 0 else 0
+        tabla_display = pd.concat([tabla_entidad, pd.DataFrame([tot])], ignore_index=True)
 
-        st.dataframe(
-            tabla_display.style.format({
-                'Facturas FACe':  '{:,}',
-                'Facturas Papel': '{:,}',
-                'Total':          '{:,}',
-            }).apply(
-                lambda x: ['font-weight: bold'] * len(x)
-                if x['Entidad'] == 'TOTAL' else [''] * len(x),
-                axis=1
-            ),
-            hide_index=True,
-            width="stretch",
-        )
+        def _html_tabla_entidad(df):
+            thead = """
+            <thead>
+              <tr style="background:#1f4e79;color:white;text-align:center;">
+                <th rowspan="2" style="padding:8px;border:1px solid #888;text-align:left;">ENTIDAD</th>
+                <th rowspan="2" style="padding:8px;border:1px solid #888;">TOTAL</th>
+                <th colspan="2" style="padding:8px;border:1px solid #888;">PAPEL</th>
+                <th colspan="2" style="padding:8px;border:1px solid #888;">FACe</th>
+                <th rowspan="2" style="padding:8px;border:1px solid #888;">% Ftras.<br>Papel</th>
+              </tr>
+              <tr style="background:#2e75b6;color:white;text-align:center;">
+                <th style="padding:6px;border:1px solid #888;">Tramitadas</th>
+                <th style="padding:6px;border:1px solid #888;">Anuladas/<br>Rechazadas</th>
+                <th style="padding:6px;border:1px solid #888;">Tramitadas</th>
+                <th style="padding:6px;border:1px solid #888;">Anuladas/<br>Rechazadas</th>
+              </tr>
+            </thead>"""
+            rows = ""
+            for _, row in df.iterrows():
+                bold = row['Entidad'] == 'Totales'
+                fw = "font-weight:bold;" if bold else ""
+                bg = "background:#dce6f1;" if bold else ""
+                rows += (
+                    f'<tr style="{bg}">'
+                    f'<td style="padding:7px;border:1px solid #ddd;{fw}">{row["Entidad"]}</td>'
+                    f'<td style="padding:7px;border:1px solid #ddd;text-align:right;{fw}">{int(row["Total"]):,}</td>'
+                    f'<td style="padding:7px;border:1px solid #ddd;text-align:right;">{int(row["Papel_Tram"]):,}</td>'
+                    f'<td style="padding:7px;border:1px solid #ddd;text-align:right;">{int(row["Papel_Anul"]):,}</td>'
+                    f'<td style="padding:7px;border:1px solid #ddd;text-align:right;">{int(row["Face_Tram"]):,}</td>'
+                    f'<td style="padding:7px;border:1px solid #ddd;text-align:right;">{int(row["Face_Anul"]):,}</td>'
+                    f'<td style="padding:7px;border:1px solid #ddd;text-align:right;{fw}">{row["Porc_Papel"]:.0f} %</td>'
+                    f'</tr>'
+                )
+            return (
+                '<table style="width:100%;border-collapse:collapse;font-size:14px;">'
+                f'{thead}<tbody>{rows}</tbody></table>'
+            )
+
+        st.markdown(_html_tabla_entidad(tabla_display), unsafe_allow_html=True)
     else:
         st.info("La columna 'entidad' no está disponible en los datos del RCF.")
+
 
     # --- Cálculos para el párrafo (total bruto, borradas absorbidas en el desglose) ---
     # El párrafo parte del total bruto y desglosa estados sobre el total (incluyendo borradas)
