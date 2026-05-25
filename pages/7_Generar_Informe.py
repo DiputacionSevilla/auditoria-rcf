@@ -88,6 +88,9 @@ def main():
         if 'anotacion' in analisis:
             retenidas = analisis['anotacion'].get('facturas_retenidas', 0)
             st.metric("Facturas Retenidas", f"{retenidas:,}")
+            n_s_post = analisis['anotacion'].get('n_s_postcambio', 0)
+            if n_s_post > 0:
+                st.metric("S post-cambio (alerta)", f"{n_s_post:,}", delta=str(n_s_post), delta_color="inverse")
         
         if 'obligaciones' in analisis:
             pendientes_3m = analisis['obligaciones'].get('facturas_3_meses', 0)
@@ -221,7 +224,122 @@ def main():
         """)
     
     st.markdown("---")
-    
+
+    # === CUADRO RESUMEN EJECUTIVO AÑO DE TRANSICIÓN 2025 ===
+    st.markdown("### 📋 Cuadro Resumen Ejecutivo — Año de Transición 2025")
+    st.info("Este cuadro refleja los dos procedimientos coexistentes durante 2025 y permite evaluar la eficacia de la medida correctora.")
+
+    if 'anotacion' in analisis and 'tramitacion' in analisis:
+        anot = analisis['anotacion']
+        tram = analisis['tramitacion']
+        fecha_cambio_res = anot.get('fecha_cambio_procedimiento', 'No configurada')
+
+        def _fmtv(val, es_tiempo=False):
+            if val is None:
+                return '—'
+            try:
+                v = float(val)
+                if es_tiempo:
+                    return f'{v/1440:.1f} d' if v >= 1440 else f'{v:.0f} min'
+                return f'{int(v):,}'
+            except Exception:
+                return str(val)
+
+        filas_res = [
+            ('Facturas electrónicas recibidas FACe',
+             _fmtv(anot.get('n_facturas_s', 0)),
+             _fmtv(anot.get('n_facturas_f_directo', 0)),
+             'Universo analizado'),
+            ('Facturas con estado previo S',
+             _fmtv(anot.get('n_facturas_s', 0)),
+             _fmtv(anot.get('n_s_postcambio', 0)),
+             'Tras el cambio el valor esperado es 0'),
+            ('Facturas con anotación F',
+             _fmtv(anot.get('n_facturas_s_con_f', 0)),
+             _fmtv(anot.get('n_facturas_f_directo', 0)),
+             'En nuevo régimen debe ser anotación directa'),
+            ('Rechazos en fase de validación',
+             '—',
+             _fmtv(anot.get('n_rechazadas_nuevo', 0)),
+             'Revisar causas y trazabilidad'),
+            ('Tiempo técnico FACe–S',
+             _fmtv(anot.get('tiempo_medio_face_s_min'), es_tiempo=True),
+             'No aplica',
+             'Solo procedimiento anterior'),
+            ('Tiempo permanencia S–F',
+             _fmtv(anot.get('tiempo_medio_s_f_min'), es_tiempo=True),
+             'No aplica',
+             'Impacto de incidencia anterior'),
+            ('Tiempo inscripción FACe–F directo',
+             _fmtv(anot.get('tiempo_medio_face_f_anterior_min'), es_tiempo=True),
+             _fmtv(anot.get('tiempo_medio_face_f_nuevo_min'), es_tiempo=True),
+             'Indicador del nuevo procedimiento'),
+            ('Tiempo posterior F–aceptación/conformidad',
+             '—',
+             _fmtv(tram.get('tiempo_medio_f_aceptacion_min'), es_tiempo=True),
+             'Tramitación posterior (Apartado 4)'),
+            ('Facturas FACe retenidas',
+             _fmtv(anot.get('facturas_retenidas', 0)),
+             '0',
+             'Debe ser 0'),
+            ('Incidencias sin justificar',
+             _fmtv(anot.get('n_fechas_negativas', 0)),
+             _fmtv(anot.get('n_s_postcambio', 0)),
+             'Requieren actuación auditora'),
+        ]
+
+        th_res = 'background:#1f4e79;color:white;padding:7px 10px;border:1px solid #555;text-align:center;white-space:nowrap;font-size:13px;'
+        th_lbl = 'background:#1f4e79;color:white;padding:7px 14px;border:1px solid #555;text-align:left;min-width:280px;font-size:13px;'
+        td_res = 'padding:6px 10px;border:1px solid #ccc;text-align:center;font-size:13px;'
+        td_lbl = 'padding:6px 14px;border:1px solid #ccc;text-align:left;font-size:13px;'
+        td_val = 'padding:6px 10px;border:1px solid #ccc;text-align:left;font-size:12px;color:#555;'
+
+        thead_res = (
+            f'<thead><tr>'
+            f'<th style="{th_lbl}">Bloque de análisis</th>'
+            f'<th style="{th_res}">Procedimiento anterior<br><small>hasta {fecha_cambio_res}</small></th>'
+            f'<th style="{th_res}">Procedimiento nuevo<br><small>desde {fecha_cambio_res}</small></th>'
+            f'<th style="{th_res}">Valoración</th>'
+            f'</tr></thead>'
+        )
+        rows_res = ''
+        for i, (lbl, v_ant, v_nvo, obs) in enumerate(filas_res):
+            bg = 'background:#f5f9ff;' if i % 2 == 0 else ''
+            rows_res += (
+                f'<tr>'
+                f'<td style="{td_lbl}{bg}">{lbl}</td>'
+                f'<td style="{td_res}{bg}">{v_ant}</td>'
+                f'<td style="{td_res}{bg}">{v_nvo}</td>'
+                f'<td style="{td_val}{bg}">{obs}</td>'
+                f'</tr>'
+            )
+
+        st.markdown(
+            f'<table style="border-collapse:collapse;font-size:13px;width:100%;">'
+            f'{thead_res}<tbody>{rows_res}</tbody></table>',
+            unsafe_allow_html=True
+        )
+
+        # Valoración semáforo
+        n_s_post_val = anot.get('n_s_postcambio', 0)
+        n_sin_causa = anot.get('n_rechazadas_sin_causa', 0)
+        n_ret = anot.get('facturas_retenidas', 0)
+        if n_s_post_val == 0 and n_sin_causa == 0 and n_ret == 0:
+            st.success(f"✅ La medida correctora implantada el {fecha_cambio_res} puede considerarse eficaz: no se detectan códigos S posteriores al cambio, facturas retenidas ni rechazos sin causa acreditada.")
+        else:
+            partes = []
+            if n_s_post_val > 0:
+                partes.append(f"{n_s_post_val} facturas con código S posteriores al cambio")
+            if n_sin_causa > 0:
+                partes.append(f"{n_sin_causa} rechazos sin causa acreditada")
+            if n_ret > 0:
+                partes.append(f"{n_ret} facturas retenidas en FACe")
+            st.error(f"⚠️ No se puede afirmar la plena eficacia de la medida correctora. Incidencias detectadas: {'; '.join(partes)}.")
+    else:
+        st.warning("Completa los análisis de **Anotación RCF** (página 3) y **Tramitación** (página 5) para ver el cuadro resumen.")
+
+    st.markdown("---")
+
     # === GENERACIÓN DEL INFORME ===
     st.markdown("### 🚀 Generar Informe")
     

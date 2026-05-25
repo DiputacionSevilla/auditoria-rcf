@@ -420,59 +420,178 @@ que podrian estar incumpliendo esta obligatoriedad.
     # ============================================
     # 4. TIEMPOS DE ANOTACION
     # ============================================
-    doc.add_heading('4. TIEMPOS DE ANOTACION EN RCF (Seccion V.2)', 1)
-
-    doc.add_paragraph("""
-Se analiza el tiempo transcurrido desde que una factura se registra en FACe hasta su anotacion en el RCF.
-Tiempos excesivos pueden indicar problemas en la integracion o retencion indebida de facturas.
-    """)
+    doc.add_heading('4. TIEMPOS DE ANOTACION EN RCF - APARTADO 2 (Seccion V.2)', 1)
 
     if 'anotacion' in analisis:
         anot = analisis['anotacion']
+        fecha_cambio_str = anot.get('fecha_cambio_procedimiento', 'no configurada')
 
+        # --- Introduccion: año de transicion 2025 ---
+        doc.add_paragraph(
+            f'Los articulos 9.1 y 9.2 de la Ley 25/2013, de 27 de diciembre, establecen que toda factura '
+            f'electronica remitida por el Punto General de Entrada debera ser puesta a disposicion o remitida '
+            f'automaticamente al Registro Contable de Facturas correspondiente, el cual, una vez recibida y '
+            f'superadas las validaciones aplicables, procedera a su anotacion, generando un codigo de '
+            f'identificacion que debera ser comunicado al Punto General de Entrada.'
+        )
+        doc.add_paragraph(
+            f'En relacion con esta prueba, debe senalarse que el ejercicio 2025 constituye un periodo de '
+            f'transicion en el funcionamiento del procedimiento de recepcion y anotacion de facturas '
+            f'electronicas procedentes de FACe en SICAL. En la auditoria del ejercicio 2024 se puso de '
+            f'manifiesto que el procedimiento implantado asignaba inicialmente, tras la descarga de la '
+            f'factura, un identificador iniciado por la letra S que era comunicado a FACe, mientras que la '
+            f'entidad no consideraba producida la anotacion definitiva en el RCF hasta la posterior '
+            f'intervencion del area gestora y la generacion de un identificador iniciado por la letra F.'
+        )
+        doc.add_paragraph(
+            f'Durante el ejercicio 2025 dicho procedimiento se mantuvo hasta {fecha_cambio_str}. '
+            f'Desde esa fecha, las facturas procedentes de FACe que superan las validaciones reglamentarias '
+            f'quedan anotadas directamente en el RCF con identificador iniciado por la letra F, sin '
+            f'transitar por el anterior estado previo S. En consecuencia, las pruebas y los indicadores '
+            f'de este apartado se presentan separando los dos procedimientos sucesivamente vigentes.'
+        )
+
+        # --- 4.1 Facturas retenidas ---
         doc.add_heading('4.1. Facturas Retenidas en FACe', 2)
-
         if anot.get('facturas_retenidas', 0) > 0:
             p = doc.add_paragraph()
             p.add_run('ALERTA: ').bold = True
             p.add_run(f'Se han detectado {anot["facturas_retenidas"]} facturas retenidas en FACe que no han sido descargadas al RCF.')
-
             if 'df_retenidas' in anot and len(anot['df_retenidas']) > 0:
                 add_table_to_doc(doc, anot['df_retenidas'], 'Detalle de Facturas Retenidas', 20)
         else:
-            doc.add_paragraph('No se han detectado facturas retenidas. Todas las facturas de FACe estan correctamente anotadas en el RCF.')
+            doc.add_paragraph('No se han detectado facturas retenidas. Todas las facturas de FACe estan anotadas en el RCF o tienen rechazo acreditado.')
 
-        doc.add_heading('4.2. Estadisticas de Tiempos de Anotacion', 2)
+        # --- 4.2 Cruce FACe-RCF diferenciando procedimientos ---
+        doc.add_heading('4.2. Cruce FACe-RCF diferenciando procedimientos', 2)
+        n_s = anot.get('n_facturas_s', 0)
+        n_s_f = anot.get('n_facturas_s_con_f', 0)
+        n_s_sin_f = anot.get('n_facturas_s_sin_f', 0)
+        n_f_dir = anot.get('n_facturas_f_directo', 0)
+        n_rechazo = anot.get('n_rechazadas_nuevo', 0)
+        n_s_post = anot.get('n_s_postcambio', 0)
 
-        tiempos_tabla = [
-            ['Metrica', 'Valor'],
-            ['Tiempo medio', f'{anot.get("tiempo_medio_min", 0):.2f} minutos'],
-            ['Tiempo mediano', f'{anot.get("tiempo_mediano_min", 0):.2f} minutos'],
-            ['Tiempo minimo', f'{anot.get("tiempo_min_min", 0):.2f} minutos'],
-            ['Tiempo maximo', f'{anot.get("tiempo_max_min", 0):.2f} minutos'],
+        cruce_tabla = [
+            ['Concepto', 'Procedimiento anterior S-F', 'Procedimiento nuevo F directo'],
+            ['Facturas con identificador S', str(n_s), str(n_s_post)],
+            ['Facturas con identificador F', str(n_s_f), str(n_f_dir)],
+            ['Facturas S sin F al cierre', str(n_s_sin_f), '-'],
+            ['Facturas rechazadas antes de anotacion', '-', str(n_rechazo)],
+            ['Facturas retenidas en FACe', str(anot.get('facturas_retenidas', 0)), '0'],
         ]
-
-        table = doc.add_table(rows=len(tiempos_tabla), cols=2)
+        table = doc.add_table(rows=len(cruce_tabla), cols=3)
         table.style = 'Light Grid Accent 1'
-        for i, fila in enumerate(tiempos_tabla):
+        for i, fila in enumerate(cruce_tabla):
             for j, valor in enumerate(fila):
                 table.rows[i].cells[j].text = str(valor)
                 if i == 0:
                     table.rows[i].cells[j].paragraphs[0].runs[0].bold = True
-
         doc.add_paragraph()
 
-        # Top demoras
-        if 'top_demoras' in anot and len(anot['top_demoras']) > 0:
-            add_table_to_doc(doc, anot['top_demoras'], '4.3. Top 10 Facturas con Mayor Demora', 10)
+        if n_s_post > 0:
+            p = doc.add_paragraph()
+            p.add_run('ALERTA [ALERTA_RCF_001]: ').bold = True
+            p.add_run(f'Se han identificado {n_s_post} facturas posteriores a la fecha efectiva del cambio ({fecha_cambio_str}) que presentan identificador previo S. Estos registros deben ser objeto de analisis individualizado.')
 
-        # Stats mensuales
-        if 'stats_mensuales' in anot and len(anot['stats_mensuales']) > 0:
-            add_table_to_doc(doc, anot['stats_mensuales'], '4.4. Estadisticas Mensuales de Tiempos', 12)
+        # --- 4.3 Tiempos procedimiento anterior ---
+        doc.add_heading('4.3. Tiempos del procedimiento anterior (S-F)', 2)
+        doc.add_paragraph(
+            'Para el periodo anterior a la modificacion del procedimiento, se han calculado separadamente '
+            'tres intervalos temporales. El tiempo FACe-S permite valorar la recepcion tecnica de las '
+            'facturas desde el Punto General de Entrada; el tiempo S-F cuantifica la permanencia de las '
+            'facturas en el estado previo cuya utilizacion fue observada en la auditoria del ejercicio '
+            'anterior; y el tiempo FACe-F refleja el plazo total hasta la generacion del registro '
+            'considerado definitivo por la entidad.'
+        )
 
-        # Ranking OC tiempos
-        if 'ranking_oc_tiempos' in anot and len(anot['ranking_oc_tiempos']) > 0:
-            add_table_to_doc(doc, anot['ranking_oc_tiempos'], '4.5. Ranking de Oficinas Contables por Tiempo Medio', 10)
+        def _fmt_min_word(val):
+            if val is None or (hasattr(val, '__class__') and val.__class__.__name__ == 'float' and str(val) == 'nan'):
+                return 'No disponible'
+            try:
+                v = float(val)
+                if v >= 1440:
+                    return f'{v/1440:.1f} dias'
+                return f'{v:.0f} minutos'
+            except Exception:
+                return 'No disponible'
+
+        tiempos_ant = [
+            ['Indicador', 'Valor'],
+            ['Facturas con codigo S', str(n_s)],
+            ['Facturas con S y F', str(n_s_f)],
+            ['Facturas S sin F al cierre', str(n_s_sin_f)],
+            ['Tiempo medio FACe-S (descarga tecnica)', _fmt_min_word(anot.get('tiempo_medio_face_s_min'))],
+            ['Tiempo medio S-F (permanencia estado previo)', _fmt_min_word(anot.get('tiempo_medio_s_f_min'))],
+            ['Tiempo medio FACe-F (registro definitivo)', _fmt_min_word(anot.get('tiempo_medio_face_f_anterior_min'))],
+        ]
+        table2 = doc.add_table(rows=len(tiempos_ant), cols=2)
+        table2.style = 'Light Grid Accent 1'
+        for i, fila in enumerate(tiempos_ant):
+            for j, valor in enumerate(fila):
+                table2.rows[i].cells[j].text = str(valor)
+                if i == 0:
+                    table2.rows[i].cells[j].paragraphs[0].runs[0].bold = True
+        doc.add_paragraph()
+
+        # --- 4.4 Tiempos procedimiento nuevo ---
+        doc.add_heading('4.4. Tiempos del procedimiento corregido (F directo)', 2)
+        doc.add_paragraph(
+            f'Desde {fecha_cambio_str}, el tiempo de inscripcion en el RCF se calcula directamente '
+            f'como la diferencia entre la fecha de recepcion o registro de la factura en FACe y la '
+            f'fecha de generacion del identificador F en SICAL/RCF. Al haberse eliminado para las '
+            f'facturas validas el transito por el estado previo S, este indicador refleja de forma '
+            f'directa el tiempo empleado en la anotacion de la factura en el registro contable.'
+        )
+
+        tiempos_nvo = [
+            ['Indicador', 'Valor'],
+            ['Facturas anotadas directamente con F', str(n_f_dir)],
+            ['Tiempo medio FACe-F directo', _fmt_min_word(anot.get('tiempo_medio_face_f_nuevo_min'))],
+            ['Tiempo mediano FACe-F directo', _fmt_min_word(anot.get('tiempo_mediano_min'))],
+            ['Tiempo maximo FACe-F directo', _fmt_min_word(anot.get('tiempo_max_min'))],
+            ['Facturas rechazadas antes de anotacion', str(n_rechazo)],
+            ['Rechazos sin causa suficiente', str(anot.get('n_rechazadas_sin_causa', 0))],
+        ]
+        table3 = doc.add_table(rows=len(tiempos_nvo), cols=2)
+        table3.style = 'Light Grid Accent 1'
+        for i, fila in enumerate(tiempos_nvo):
+            for j, valor in enumerate(fila):
+                table3.rows[i].cells[j].text = str(valor)
+                if i == 0:
+                    table3.rows[i].cells[j].paragraphs[0].runs[0].bold = True
+        doc.add_paragraph()
+
+        # --- 4.5 Conclusion del apartado ---
+        doc.add_heading('4.5. Conclusion del apartado 2', 2)
+        incidencias_post = n_s_post > 0 or anot.get('n_rechazadas_sin_causa', 0) > 0 or anot.get('facturas_retenidas', 0) > 0
+        if not incidencias_post:
+            doc.add_paragraph(
+                f'De las actuaciones realizadas se concluye que durante el ejercicio 2025 han '
+                f'coexistido dos procedimientos diferenciados para la recepcion y anotacion de facturas '
+                f'electronicas procedentes de FACe. Hasta {fecha_cambio_str} continuo aplicandose el '
+                f'procedimiento observado en la auditoria del ejercicio anterior. Desde {fecha_cambio_str}, '
+                f'las facturas electronicas que superan las validaciones reglamentarias quedan anotadas '
+                f'directamente en el RCF con identificador F, sin transitar por el anterior estado previo. '
+                f'Las comprobaciones realizadas sobre el periodo posterior a la implantacion del cambio '
+                f'no han identificado nuevos codigos S para facturas validas, facturas retenidas en FACe '
+                f'ni diferencias no justificadas entre FACe y el RCF. En consecuencia, la incidencia '
+                f'detectada en la auditoria anterior puede considerarse subsanada durante el ejercicio.'
+            )
+        else:
+            desc_incidencias = []
+            if n_s_post > 0:
+                desc_incidencias.append(f'{n_s_post} facturas posteriores al cambio con codigo S')
+            if anot.get('n_rechazadas_sin_causa', 0) > 0:
+                desc_incidencias.append(f'{anot["n_rechazadas_sin_causa"]} rechazos sin causa acreditada')
+            if anot.get('facturas_retenidas', 0) > 0:
+                desc_incidencias.append(f'{anot["facturas_retenidas"]} facturas retenidas en FACe')
+            p = doc.add_paragraph()
+            p.add_run('La modificacion del procedimiento comunicada por la entidad constituye una medida '
+                      'adecuada para corregir la deficiencia observada en la auditoria anterior. No obstante, '
+                      'las pruebas realizadas han detectado: ')
+            p.add_run('; '.join(desc_incidencias) + '. ').bold = True
+            p.add_run('Por lo que no resulta posible considerar plenamente acreditada su implantacion '
+                      'efectiva para la totalidad del periodo posterior al cambio.')
     else:
         doc.add_paragraph('No se ha realizado el analisis de tiempos de anotacion. Navegue por la seccion correspondiente de la aplicacion.')
 

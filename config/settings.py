@@ -94,6 +94,30 @@ COLUMNAS_ESPERADAS = {
     ]
 }
 
+# Parámetros de transición del ejercicio 2025
+# El ejercicio 2025 coexistieron dos procedimientos de anotación en el RCF:
+#   - Procedimiento anterior (S→F): hasta el 20 de octubre de 2025
+#   - Procedimiento corregido (F directo): desde el 20 de octubre de 2025
+CONFIGURACION_TRANSICION_2025 = {
+    # Fecha exacta de entrada en funcionamiento del nuevo procedimiento.
+    # Si se cambia a None, la aplicación intentará inferirla de los datos.
+    'fecha_efectiva_cambio_procedimiento': '2025-10-20',
+
+    # Prefijo que identificaba el registro previo (procedimiento anterior)
+    'prefijo_registro_previo': 'S',
+
+    # Prefijo del identificador de anotación definitiva en el RCF
+    'prefijo_registro_rcf_definitivo': 'F',
+
+    # Plazo máximo para que el área gestora actúe sobre la factura (en días)
+    # Configurar conforme a las Bases de ejecución del presupuesto aplicables
+    'plazo_aceptacion_areas_dias': 2,
+
+    # Tipo de días del plazo: configurar tras validar las Bases de ejecución
+    # Valores posibles: 'hábiles' | 'naturales'
+    'tipo_dias_plazo_aceptacion': None,
+}
+
 # Configuración de informes
 CONFIGURACION_INFORME = {
     'titulo': 'INFORME DE AUDITORÍA DEL REGISTRO CONTABLE DE FACTURAS',

@@ -30,7 +30,34 @@ MAPEO_COLUMNAS = {
         'codigo_oc': ['codigo_oc', 'OC', 'oc', 'Oficina Contable', 'oficina_contable', 'CODIGO DIR3 OFICINA CONTABLE'],
         'codigo_og': ['codigo_og', 'OG', 'og', 'Órgano Gestor', 'organo_gestor', 'CODIGO DIR3 ÓRGANO GESTOR'],
         'codigo_ut': ['codigo_ut', 'UT', 'ut', 'Unidad Tramitadora', 'unidad_tramitadora', 'CODIGO DIR3 UNIDAD TRAMITADORA'],
-        'motivo_rechazo': ['motivo_rechazo', 'MOTIVO RECHAZO', 'Motivo Rechazo', 'MOTIVO']
+        'motivo_rechazo': ['motivo_rechazo', 'MOTIVO RECHAZO', 'Motivo Rechazo', 'MOTIVO'],
+        'area_unidad_servicio': ['area_unidad_servicio', 'ÁREA/UNIDAD/SERVICIO', 'AREA/UNIDAD/SERVICIO', 'Área/Unidad/Servicio', 'ÁREA', 'Area/Unidad/Servicio'],
+        'fecha_aceptacion': ['fecha_aceptacion', 'FECHA ACEPTACION', 'Fecha Aceptacion', 'FECHA ACEPTACIÓN', 'Fecha Aceptación', 'F. ACEPTACION', 'FECHA DE ACEPTACION', 'Fecha de Aceptación'],
+        # Campos para el análisis de transición 2025 (procedimiento S→F vs F directo)
+        # fecha_codigo_s: fecha en que SICAL recibió/descargó la factura desde FACe
+        #   = "FECHA RECEPCION FACE" en el Excel del RCF (equivale al hito S del procedimiento anterior)
+        'fecha_codigo_s': [
+            'fecha_codigo_s', 'FECHA RECEPCION FACE', 'FECHA RECEPCIÓN FACE',
+            'Fecha Recepcion FACe', 'Fecha Recepción FACe',
+            'FECHA_CODIGO_S', 'Fecha Código S', 'FECHA_S', 'fecha_s',
+        ],
+        # fecha_codigo_f / codigo_f: identificador y fecha de registro definitivo en el RCF
+        #   = "ID_FRA_RCF" y "FECHA REGISTRO" en el Excel (ya mapeados como id_fra_rcf y fecha_anotacion_rcf)
+        #   Se añaden aquí como alias explícitos para las funciones de cálculo temporal.
+        'fecha_codigo_f': [
+            'fecha_codigo_f', 'FECHA REGISTRO', 'Fecha registro', 'FECHA_CODIGO_F',
+            'Fecha Código F', 'FECHA_F', 'fecha_f',
+            'FECHA ACEPTACIÓN', 'Fecha Aceptación', 'FECHA ACEPTACION', 'Fecha Aceptacion',
+            'F. DE GRABACIÓN DE LA OPER.',
+        ],
+        'codigo_f': [
+            'codigo_f', 'ID_FRA_RCF', 'id_fra_rcf', 'ID_RCF', 'CODIGO_F',
+            'Código F', 'ID_F', 'id_f',
+        ],
+        'fecha_aceptacion_ut': ['fecha_aceptacion_ut', 'FECHA_ACEPTACION_UT', 'Fecha Aceptación UT', 'fecha_aceptacion_unidad'],
+        'fecha_conformidad': ['fecha_conformidad', 'FECHA_CONFORMIDAD', 'Fecha Conformidad', 'FECHA CONFORMIDAD'],
+        'fecha_rechazo': ['fecha_rechazo', 'FECHA_RECHAZO', 'Fecha Rechazo', 'FECHA RECHAZO', 'fecha_rechazo_rcf'],
+        'motivo_rechazo_rcf': ['motivo_rechazo_rcf', 'MOTIVO_RECHAZO_RCF', 'Motivo Rechazo RCF', 'MOTIVO RECHAZO RCF'],
     },
     'face': {
         'registro': ['registro', 'Registro', 'ID_FACE', 'id_face', 'Nº Registro'],
@@ -130,8 +157,22 @@ def cargar_datos(archivo_rcf, archivo_face, archivo_anulaciones, archivo_estados
         df_anulaciones = normalizar_columnas(df_anulaciones, 'anulaciones')
         df_estados = normalizar_columnas(df_estados, 'estados')
         
+        # Garantizar que fecha_codigo_f y fecha_codigo_s tengan columna aunque no se mapearon por nombre.
+        # fecha_codigo_f = FECHA REGISTRO = fecha_anotacion_rcf (coincide con FECHA ACEPTACIÓN en estos datos)
+        # fecha_codigo_s = FECHA RECEPCION FACE (si no está, se usará fecha_registro_face como fallback)
+        if 'fecha_codigo_f' not in df_rcf.columns and 'fecha_anotacion_rcf' in df_rcf.columns:
+            df_rcf['fecha_codigo_f'] = df_rcf['fecha_anotacion_rcf']
+        if 'fecha_codigo_f' not in df_rcf.columns and 'fecha_aceptacion' in df_rcf.columns:
+            df_rcf['fecha_codigo_f'] = df_rcf['fecha_aceptacion']
+        if 'fecha_codigo_s' not in df_rcf.columns and 'fecha_registro_face' in df_rcf.columns:
+            df_rcf['fecha_codigo_s'] = df_rcf['fecha_registro_face']
+
         # Convertir fechas
-        df_rcf = convertir_fechas(df_rcf, ['fecha_emision', 'fecha_anotacion_rcf', 'fecha_registro_face'])
+        df_rcf = convertir_fechas(df_rcf, [
+            'fecha_emision', 'fecha_anotacion_rcf', 'fecha_registro_face', 'fecha_aceptacion',
+            'fecha_codigo_s', 'fecha_codigo_f', 'fecha_aceptacion_ut', 'fecha_conformidad',
+            'fecha_rechazo',
+        ])
         df_face = convertir_fechas(df_face, ['fecha_registro'])
         df_anulaciones = convertir_fechas(df_anulaciones, ['fecha_solicitud_anulacion'])
         df_estados = convertir_fechas(df_estados, ['insertado'])
@@ -432,41 +473,67 @@ def obtener_facturas_papel_sospechosas(df_rcf: pd.DataFrame) -> pd.DataFrame:
 
 def calcular_tiempos_anotacion(df_rcf: pd.DataFrame, df_face: pd.DataFrame = None) -> pd.DataFrame:
     """
-    Calcula los tiempos de anotación en RCF desde FACe.
+    Calcula los tiempos de inscripción en el RCF.
 
-    Usa directamente las columnas del RCF:
-    - fecha_registro_face: Fecha de registro en FACe (columna "FECHA REG. EN FACE")
-    - fecha_anotacion_rcf: Fecha de anotación en RCF (columna "FECHA REGISTRO")
+    - Facturas FACe:  tiempo = fecha_aceptacion - fecha_registro_face
+                      (desde registro en FACe hasta aceptación)
+    - Facturas papel: tiempo = fecha_aceptacion - fecha_anotacion_rcf
+                      (desde fecha de registro en RCF hasta aceptación)
 
-    El tiempo de anotación = fecha_anotacion_rcf - fecha_registro_face
+    Requiere la columna 'fecha_aceptacion' en el RCF.
+    Devuelve columna 'tipo_origen' = 'FACe' | 'Papel' y
+    'fecha_inicio' con la fecha usada como origen del cómputo.
     """
-    # Verificar columnas necesarias en el RCF
-    if 'fecha_anotacion_rcf' not in df_rcf.columns:
+    if 'fecha_aceptacion' not in df_rcf.columns:
         return pd.DataFrame()
 
-    # Filtrar solo facturas electrónicas (no papel)
-    df_trabajo = df_rcf[df_rcf['es_papel'] == False].copy()
+    segmentos = []
 
-    # Verificar si tenemos la fecha de registro en FACe directamente en el RCF
-    if 'fecha_registro_face' in df_trabajo.columns:
-        # Usar directamente las columnas del RCF (método preferido)
-        df_resultado = df_trabajo.dropna(subset=['fecha_anotacion_rcf', 'fecha_registro_face']).copy()
-    elif df_face is not None and 'registro' in df_face.columns and 'ID_FACE' in df_trabajo.columns:
-        # Fallback: hacer merge con archivo FACe si no hay columna en RCF
-        df_resultado = df_trabajo.merge(
+    # --- Facturas FACe (electrónicas) ---
+    df_face_inv = df_rcf[df_rcf['es_papel'] == False].copy()
+
+    tiene_col_face = (
+        'fecha_registro_face' in df_face_inv.columns
+        and df_face_inv['fecha_registro_face'].notna().any()
+    )
+
+    if tiene_col_face:
+        df_seg = df_face_inv.dropna(subset=['fecha_aceptacion', 'fecha_registro_face']).copy()
+        df_seg['fecha_inicio'] = df_seg['fecha_registro_face']
+    elif df_face is not None and 'registro' in df_face.columns and 'ID_FACE' in df_face_inv.columns:
+        # Fallback: obtener fecha de registro desde el archivo FACe
+        df_seg = df_face_inv.merge(
             df_face[['registro', 'fecha_registro']],
             left_on='ID_FACE',
             right_on='registro',
             how='left'
         ).rename(columns={'fecha_registro': 'fecha_registro_face'})
-        df_resultado = df_resultado.dropna(subset=['fecha_anotacion_rcf', 'fecha_registro_face']).copy()
+        df_seg = df_seg.dropna(subset=['fecha_aceptacion', 'fecha_registro_face']).copy()
+        df_seg['fecha_inicio'] = df_seg['fecha_registro_face']
     else:
+        df_seg = pd.DataFrame()
+
+    if not df_seg.empty:
+        df_seg['tipo_origen'] = 'FACe'
+        segmentos.append(df_seg)
+
+    # --- Facturas papel ---
+    if 'fecha_anotacion_rcf' in df_rcf.columns:
+        df_papel = df_rcf[df_rcf['es_papel'] == True].copy()
+        df_papel = df_papel.dropna(subset=['fecha_aceptacion', 'fecha_anotacion_rcf']).copy()
+        if not df_papel.empty:
+            df_papel['fecha_inicio'] = df_papel['fecha_anotacion_rcf']
+            df_papel['tipo_origen'] = 'Papel'
+            segmentos.append(df_papel)
+
+    if not segmentos:
         return pd.DataFrame()
 
-    # Calcular diferencia en minutos (Anotación en RCF - Registro en FACe)
-    # Resultado positivo = tiempo que tardó en anotarse en RCF después de llegar a FACe
+    df_resultado = pd.concat(segmentos, ignore_index=True)
+
+    # tiempo = fecha_aceptacion - fecha_inicio (en minutos)
     df_resultado['tiempo_anotacion_min'] = (
-        df_resultado['fecha_anotacion_rcf'] - df_resultado['fecha_registro_face']
+        df_resultado['fecha_aceptacion'] - df_resultado['fecha_inicio']
     ).dt.total_seconds() / 60
 
     return df_resultado
@@ -512,6 +579,241 @@ def obtener_ranking_por_campo(df: pd.DataFrame, campo_agrupar: str,
     }).sort_values('importe_total', ascending=False).head(top_n)
     
     return ranking
+
+def clasificar_procedimiento(df_rcf: pd.DataFrame, fecha_cambio=None) -> pd.DataFrame:
+    """
+    Clasifica cada factura electrónica por el procedimiento realmente aplicado
+    durante el año de transición 2025.
+
+    La clasificación es EXCLUSIVAMENTE por fecha, sin requerir un campo codigo_s:
+      - fecha_codigo_s ("FECHA RECEPCION FACE") < fecha_cambio → PROCEDIMIENTO_ANTERIOR_S_F
+      - fecha_codigo_s >= fecha_cambio → ANOTACION_DIRECTA_F
+      - factura rechazada (fecha_rechazo presente) → RECHAZO_PREVIO_A_ANOTACION
+      - sin fechas suficientes → INCIDENCIA_A_ANALIZAR
+
+    Campos añadidos al DataFrame:
+      procedimiento_aplicado: PROCEDIMIENTO_ANTERIOR_S_F | ANOTACION_DIRECTA_F |
+                               RECHAZO_PREVIO_A_ANOTACION | INCIDENCIA_A_ANALIZAR
+      resultado_auditoria_rcf: valor detallado (ver spec sección 5.2)
+    """
+    from config.settings import CONFIGURACION_TRANSICION_2025
+
+    df = df_rcf.copy()
+
+    if fecha_cambio is None:
+        fecha_cambio_cfg = CONFIGURACION_TRANSICION_2025.get('fecha_efectiva_cambio_procedimiento')
+        fecha_cambio = pd.to_datetime(fecha_cambio_cfg) if fecha_cambio_cfg else None
+
+    tiene_fecha_s = 'fecha_codigo_s' in df.columns
+    tiene_fecha_f = 'fecha_codigo_f' in df.columns
+    tiene_rechazo = 'fecha_rechazo' in df.columns
+
+    # Columna de referencia para clasificar: "FECHA RECEPCION FACE" o fallback a fecha_anotacion_rcf
+    col_fecha_ref = 'fecha_codigo_s' if tiene_fecha_s else ('fecha_anotacion_rcf' if 'fecha_anotacion_rcf' in df.columns else None)
+
+    def _procedimiento(row):
+        fecha_ref = row.get(col_fecha_ref) if col_fecha_ref else None
+        tiene_rechazo_fila = pd.notna(row.get('fecha_rechazo')) if tiene_rechazo else False
+
+        if tiene_rechazo_fila:
+            return 'RECHAZO_PREVIO_A_ANOTACION'
+
+        if fecha_cambio is not None and pd.notna(fecha_ref):
+            if fecha_ref < fecha_cambio:
+                return 'PROCEDIMIENTO_ANTERIOR_S_F'
+            return 'ANOTACION_DIRECTA_F'
+
+        # Sin fecha de referencia: si tiene fecha_codigo_f, asumir F directo; si no, incidencia
+        if tiene_fecha_f and pd.notna(row.get('fecha_codigo_f')):
+            return 'ANOTACION_DIRECTA_F'
+        return 'INCIDENCIA_A_ANALIZAR'
+
+    def _resultado(row):
+        proc = row['procedimiento_aplicado']
+        motivo = str(row.get('motivo_rechazo_rcf', '')).strip() if pd.notna(row.get('motivo_rechazo_rcf', None)) else ''
+        fecha_ref = row.get(col_fecha_ref) if col_fecha_ref else None
+        tiene_f_definitivo = tiene_fecha_f and pd.notna(row.get('fecha_codigo_f'))
+
+        if proc == 'PROCEDIMIENTO_ANTERIOR_S_F':
+            # Facturas recibidas antes del cambio pero que podrían no tener F aún
+            if not tiene_f_definitivo:
+                return 'REGIMEN_ANTERIOR_S_SIN_F'
+            return 'TRAMITADA_REGIMEN_ANTERIOR_S_F'
+
+        if proc == 'ANOTACION_DIRECTA_F':
+            # Verificar si alguna es posterior al cambio pero con fecha_codigo_s < cambio
+            # (no aplica aquí porque la clasificación ya usa la fecha directamente)
+            return 'ANOTADA_DIRECTA_F_CORRECTA'
+
+        if proc == 'RECHAZO_PREVIO_A_ANOTACION':
+            if motivo:
+                return 'RECHAZADA_VALIDACION_TRAZABLE'
+            return 'RECHAZADA_SIN_CAUSA_SUFICIENTE'
+
+        return 'INCIDENCIA_MANUAL'
+
+    mask_electronica = df['es_papel'] == False if 'es_papel' in df.columns else pd.Series(True, index=df.index)
+
+    df['procedimiento_aplicado'] = 'NO_APLICA'
+    df['resultado_auditoria_rcf'] = 'NO_APLICA'
+
+    if mask_electronica.any():
+        df_elec = df[mask_electronica].copy()
+        df_elec['procedimiento_aplicado'] = df_elec.apply(_procedimiento, axis=1)
+        df_elec['resultado_auditoria_rcf'] = df_elec.apply(_resultado, axis=1)
+        df.loc[mask_electronica, 'procedimiento_aplicado'] = df_elec['procedimiento_aplicado'].values
+        df.loc[mask_electronica, 'resultado_auditoria_rcf'] = df_elec['resultado_auditoria_rcf'].values
+
+    return df
+
+
+def calcular_indicadores_procedimiento_anterior(df_rcf: pd.DataFrame) -> pd.DataFrame:
+    """
+    Para facturas con procedimiento_aplicado == PROCEDIMIENTO_ANTERIOR_S_F,
+    calcula los indicadores temporales (en minutos):
+
+      tiempo_s_f    — FECHA RECEPCION FACE → FECHA REGISTRO
+                      Tiempo de permanencia en estado previo (el indicador auditor clave).
+      tiempo_face_f — fecha FACe → FECHA REGISTRO
+                      Tiempo total hasta el registro definitivo (calculable si existe fecha FACe).
+      tiempo_face_s — fecha FACe → FECHA RECEPCION FACE
+                      Tiempo de descarga técnica desde FACe (calculable si existe fecha FACe).
+
+    Fuentes de columnas en los datos reales:
+      fecha_codigo_s = "FECHA RECEPCION FACE"  (hito S del procedimiento anterior)
+      fecha_codigo_f = "FECHA REGISTRO" ≈ "FECHA ACEPTACIÓN"  (hito F / registro definitivo)
+      fecha_registro_face = fecha de registro en FACe (del fichero FACe o columna propia del RCF)
+
+    Registros con fechas ausentes o tiempos negativos se marcan incidencia_temporal=True
+    y se excluyen de las medias, pero se conservan para revisión individualizada.
+    """
+    if 'procedimiento_aplicado' not in df_rcf.columns:
+        return pd.DataFrame()
+
+    df = df_rcf[df_rcf['procedimiento_aplicado'] == 'PROCEDIMIENTO_ANTERIOR_S_F'].copy()
+    if df.empty:
+        return pd.DataFrame()
+
+    # Indicador principal: FECHA RECEPCION FACE → FECHA REGISTRO
+    tiene_s = 'fecha_codigo_s' in df.columns
+    tiene_f = 'fecha_codigo_f' in df.columns
+    tiene_face = 'fecha_registro_face' in df.columns
+
+    if tiene_s and tiene_f:
+        df['tiempo_s_f'] = (df['fecha_codigo_f'] - df['fecha_codigo_s']).dt.total_seconds() / 60
+    else:
+        df['tiempo_s_f'] = pd.NA
+
+    if tiene_face and tiene_f:
+        df['tiempo_face_f'] = (df['fecha_codigo_f'] - df['fecha_registro_face']).dt.total_seconds() / 60
+    else:
+        df['tiempo_face_f'] = pd.NA
+
+    if tiene_face and tiene_s:
+        df['tiempo_face_s'] = (df['fecha_codigo_s'] - df['fecha_registro_face']).dt.total_seconds() / 60
+    else:
+        df['tiempo_face_s'] = pd.NA
+
+    df['incidencia_temporal'] = (
+        (df['tiempo_s_f'].isna() | (df['tiempo_s_f'] < 0)) &
+        (df['tiempo_face_f'].isna() | (df['tiempo_face_f'] < 0))
+    )
+
+    return df
+
+
+def calcular_indicadores_procedimiento_nuevo(df_rcf: pd.DataFrame) -> pd.DataFrame:
+    """
+    Para facturas con procedimiento_aplicado == ANOTACION_DIRECTA_F,
+    calcula el indicador temporal (en minutos):
+
+      tiempo_face_f_directo — fecha FACe → FECHA REGISTRO (anotación directa en el RCF)
+
+    Fuentes:
+      fecha_codigo_s = "FECHA RECEPCION FACE" (en el nuevo procedimiento ≈ fecha FACe)
+      fecha_codigo_f = "FECHA REGISTRO" (= fecha de anotación directa F)
+      fecha_registro_face = fecha de registro en FACe (del fichero FACe, si disponible)
+
+    Para el nuevo procedimiento, "FECHA RECEPCION FACE" y "FECHA REGISTRO" coinciden o
+    están muy próximas, por lo que el indicador refleja directamente el tiempo de inscripción.
+    """
+    if 'procedimiento_aplicado' not in df_rcf.columns:
+        return pd.DataFrame()
+
+    df = df_rcf[df_rcf['procedimiento_aplicado'] == 'ANOTACION_DIRECTA_F'].copy()
+    if df.empty:
+        return pd.DataFrame()
+
+    # Preferencia de fecha inicial: fecha_registro_face (FACe), fallback fecha_codigo_s
+    if 'fecha_registro_face' in df.columns and df['fecha_registro_face'].notna().any():
+        col_inicio = 'fecha_registro_face'
+    elif 'fecha_codigo_s' in df.columns:
+        col_inicio = 'fecha_codigo_s'
+    else:
+        df['tiempo_face_f_directo'] = pd.NA
+        df['incidencia_temporal'] = True
+        return df
+
+    col_fin = 'fecha_codigo_f' if 'fecha_codigo_f' in df.columns else None
+    if col_fin is None:
+        df['tiempo_face_f_directo'] = pd.NA
+        df['incidencia_temporal'] = True
+        return df
+
+    df['tiempo_face_f_directo'] = (
+        df[col_fin] - df[col_inicio]
+    ).dt.total_seconds() / 60
+
+    df['incidencia_temporal'] = (
+        df['tiempo_face_f_directo'].isna() | (df['tiempo_face_f_directo'] < 0)
+    )
+
+    return df
+
+
+def calcular_indicadores_tramitacion_posterior(df_rcf: pd.DataFrame) -> pd.DataFrame:
+    """
+    Para facturas con procedimiento_aplicado == ANOTACION_DIRECTA_F que ya tienen
+    fecha de aceptación o conformidad, calcula el indicador de tramitación posterior
+    (en minutos):
+
+      tiempo_f_aceptacion — código F → fecha aceptación/conformidad
+
+    Este indicador pertenece al Apartado 4 del informe (tramitación posterior),
+    NO debe denominarse tiempo de inscripción en el RCF.
+    """
+    cols_requeridas = {'fecha_codigo_f', 'procedimiento_aplicado'}
+    if not cols_requeridas.issubset(df_rcf.columns):
+        return pd.DataFrame()
+
+    df = df_rcf[df_rcf['procedimiento_aplicado'] == 'ANOTACION_DIRECTA_F'].copy()
+    if df.empty:
+        return pd.DataFrame()
+
+    # Usar fecha_aceptacion_ut si existe; si no, fecha_aceptacion como fallback
+    if 'fecha_aceptacion_ut' in df.columns and df['fecha_aceptacion_ut'].notna().any():
+        df['fecha_tramitacion'] = df['fecha_aceptacion_ut']
+    elif 'fecha_aceptacion' in df.columns:
+        df['fecha_tramitacion'] = df['fecha_aceptacion']
+    else:
+        return pd.DataFrame()
+
+    # También registrar conformidad si existe (indicador alternativo)
+    if 'fecha_conformidad' in df.columns:
+        df['tiempo_f_conformidad'] = (
+            df['fecha_conformidad'] - df['fecha_codigo_f']
+        ).dt.total_seconds() / 60
+
+    df['tiempo_f_aceptacion'] = (
+        df['fecha_tramitacion'] - df['fecha_codigo_f']
+    ).dt.total_seconds() / 60
+
+    df['incidencia_temporal'] = (
+        df['tiempo_f_aceptacion'].isna() | (df['tiempo_f_aceptacion'] < 0)
+    )
+
+    return df
+
 
 def exportar_a_excel(df: pd.DataFrame, nombre_archivo: str):
     """
