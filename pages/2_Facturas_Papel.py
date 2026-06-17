@@ -116,7 +116,8 @@ def main():
     
     # === EVOLUCIÓN TEMPORAL ===
     st.markdown("### 📈 Evolución Temporal de Facturas Susceptibles")
-    
+
+    evolucion = pd.DataFrame()
     if len(facturas_sospechosas) > 0 and 'fecha_anotacion_rcf' in facturas_sospechosas.columns:
         # Evolución mensual
         facturas_sospechosas['mes'] = pd.to_datetime(
