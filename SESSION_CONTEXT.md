@@ -83,6 +83,16 @@ Se creó el archivo **`DESPLIEGUE_STREAMLIT_CLOUD.md`** con:
 
 **Archivo modificado:** `app.py`, `diagnostico_retenidas.py`, `DESPLIEGUE_STREAMLIT_CLOUD.md`.
 
+### 6. Corrección de `UnboundLocalError` en Facturas Papel (`pages/2_Facturas_Papel.py`)
+
+**Error:** `UnboundLocalError: local variable 'tabla_sospechosas' referenced before assignment`.
+
+**Causa:** La variable `tabla_sospechosas` solo se definía dentro del bloque `if len(facturas_sospechosas) > 0`. Al guardar el análisis en `session_state['analisis']['facturas_papel']`, se referenciaba `tabla_sospechosas` sin inicializar previa cuando no había facturas sospechosas.
+
+**Solución:** Se inicializa `tabla_sospechosas = pd.DataFrame()` al inicio de la función, antes de los bloques condicionales.
+
+**Archivo modificado:** `pages/2_Facturas_Papel.py`.
+
 ---
 
 ## 📋 Pendientes para Próximas Sesiones
