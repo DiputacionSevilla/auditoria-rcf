@@ -12,6 +12,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from config.settings import COLORES, CONFIGURACION, CONFIGURACION_INFORME
 from utils.report_generator import generar_informe_word, generar_informe_pdf
+from utils.analisis import precalcular_analisis_faltantes
 
 st.set_page_config(
     page_title="Generar Informe - Auditoría RCF",
@@ -31,15 +32,20 @@ def main():
         return
     
     datos = st.session_state['datos']
-    
+
     # Verificar análisis realizados
     if 'analisis' not in st.session_state:
         st.session_state['analisis'] = {}
-    
+
     analisis = st.session_state['analisis']
-    
+
+    # Precalcular automáticamente los análisis faltantes para que el informe
+    # pueda generarse incluso si el usuario no ha visitado todas las páginas.
+    analisis = precalcular_analisis_faltantes(datos, analisis)
+    st.session_state['analisis'] = analisis
+
     st.markdown("---")
-    
+
     # === ESTADO DE LOS ANÁLISIS ===
     st.markdown("### 📊 Estado de los Análisis")
     st.info("Verifica que todos los análisis se hayan completado antes de generar el informe")

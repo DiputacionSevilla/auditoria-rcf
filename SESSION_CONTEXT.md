@@ -87,11 +87,28 @@ Se creó el archivo **`DESPLIEGUE_STREAMLIT_CLOUD.md`** con:
 
 **Error:** `UnboundLocalError: local variable 'tabla_sospechosas' referenced before assignment`.
 
-**Causa:** La variable `tabla_sospechosas` solo se definía dentro del bloque `if len(facturas_sospechosas) > 0`. Al guardar el análisis en `session_state['analisis']['facturas_papel']`, se referenciaba `tabla_sospechosas` sin inicializar previa cuando no había facturas sospechosas.
+**Causa:** La variable `tabla_sospechosas` solo se definía dentro del bloque `if len(facturas_sospechosas) > 0`. Al guardar el análisis en `session_state['analisis']['facturas_papel']`, se referenciaba `tabla_sospechosas` sin inicializar cuando no había facturas sospechosas.
 
 **Solución:** Se inicializa `tabla_sospechosas = pd.DataFrame()` al inicio de la función, antes de los bloques condicionales.
 
 **Archivo modificado:** `pages/2_Facturas_Papel.py`.
+
+### 7. Precálculo automático de análisis en Generar Informe (`pages/7_Generar_Informe.py`)
+
+**Problema:** Si el usuario accedía directamente a la página de generación de informes sin haber visitado previamente todas las páginas de análisis, las secciones aparecían en amarillo como "no procesadas" porque `session_state['analisis']` no contenía los datos necesarios.
+
+**Solución:**
+- Se creó el módulo `utils/analisis.py` con funciones de cálculo independientes para cada sección:
+  - `calcular_facturas_papel`
+  - `calcular_anotacion`
+  - `calcular_validaciones`
+  - `calcular_tramitacion`
+  - `calcular_obligaciones`
+  - `precalcular_analisis_faltantes`
+- Se modificó `pages/7_Generar_Informe.py` para llamar a `precalcular_analisis_faltantes` al cargar la página, completando automáticamente los análisis que falten.
+- Se mantiene la compatibilidad con los análisis ya guardados por las páginas individuales; solo se calculan los faltantes.
+
+**Archivos modificados:** `utils/analisis.py` (nuevo), `pages/7_Generar_Informe.py`.
 
 ---
 
