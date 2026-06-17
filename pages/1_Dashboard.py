@@ -298,27 +298,45 @@ def main():
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown("### 🏛️ Top 10 Oficinas Contables")
-        
-        if 'codigo_oc' in df_filtrado.columns:
-            top_oc = df_filtrado['codigo_oc'].value_counts().head(10)
-            
-            fig = px.bar(
-                x=top_oc.values,
-                y=top_oc.index,
-                orientation='h',
-                title='Facturas por Oficina Contable',
-                color=top_oc.values,
-                color_continuous_scale='Greens'
+        st.markdown("### 🏛️ Top 10 Áreas - Facturas en Papel")
+
+        # Buscar la columna ÁREA/UNIDAD/SERVICIO de forma flexible
+        _area_col_graf = None
+        for _c in df_filtrado.columns:
+            _cu = _c.upper().replace('Á', 'A').replace('É', 'E')
+            if any(kw in _cu for kw in ['AREA', 'UNIDAD', 'SERVICIO']):
+                _area_col_graf = _c
+                break
+
+        df_papel_graf = df_filtrado[df_filtrado['es_papel'] == True].copy()
+
+        if _area_col_graf and not df_papel_graf.empty:
+            df_papel_graf['_area'] = (
+                df_papel_graf[_area_col_graf]
+                .astype(str).str.strip()
+                .apply(lambda x: x[:2] if x and x.lower() not in ['nan', '', 'none'] else None)
             )
-            
-            fig.update_layout(
-                xaxis_title="Número de facturas",
-                yaxis_title="Código OC",
-                showlegend=False
-            )
-            
-            st.plotly_chart(fig, width="stretch")
+            top_area = df_papel_graf['_area'].dropna().value_counts().head(10)
+
+            if not top_area.empty:
+                fig = px.bar(
+                    x=top_area.values,
+                    y=top_area.index,
+                    orientation='h',
+                    title='Facturas en papel por área',
+                    color=top_area.values,
+                    color_continuous_scale='Greens'
+                )
+                fig.update_layout(
+                    xaxis_title="Número de facturas",
+                    yaxis_title="Área",
+                    showlegend=False
+                )
+                st.plotly_chart(fig, width="stretch")
+            else:
+                st.info("No hay datos de área disponibles para las facturas en papel.")
+        else:
+            st.info("Columna 'ÁREA/UNIDAD/SERVICIO' no encontrada o no hay facturas en papel.")
     
     with col2:
         st.markdown("### 📊 Top 10 Unidades Tramitadoras")
@@ -453,6 +471,84 @@ def main():
     else:
         st.warning("No se pueden calcular las facturas de años anteriores por falta de columnas de fecha.")
     
+    st.markdown("---")
+
+    # === TABLA FACTURAS EN PAPEL POR ÁREA - DIPUTACIÓN DE SEVILLA ===
+    nombre_entidad = CONFIGURACION.get('nombre_entidad', 'Diputación de Sevilla')
+    st.markdown(f"### 📄 Facturas en Papel por Área - {nombre_entidad}")
+
+    _df_rcf_all = datos['rcf']
+
+    # Buscar la columna de área de forma flexible (el nombre puede variar por codificación)
+    _area_col = None
+    if 'area_unidad_servicio' in _df_rcf_all.columns and _df_rcf_all['area_unidad_servicio'].notna().any():
+        _area_col = 'area_unidad_servicio'
+    else:
+        for _c in _df_rcf_all.columns:
+            if any(kw in _c.upper().replace('Á', 'A').replace('É', 'E') for kw in ['AREA', 'UNIDAD', 'SERVICIO']):
+                _area_col = _c
+                break
+
+    if _area_col is None:
+        st.info("La columna 'ÁREA/UNIDAD/SERVICIO' no está disponible en los datos del RCF.")
+    elif 'entidad' not in _df_rcf_all.columns:
+        st.info("La columna 'entidad' no está disponible en los datos del RCF.")
+    else:
+        df_papel_diput = _df_rcf_all[
+            (_df_rcf_all['es_papel'] == True) &
+            (_df_rcf_all['entidad'].astype(str).str.upper().str.contains('DIPU', na=False))
+        ].copy()
+
+        df_papel_diput['_area_cod'] = (
+            df_papel_diput[_area_col]
+            .astype(str).str.strip()
+            .apply(lambda x: x[:2] if x and x.lower() not in ['nan', '', 'none'] else None)
+        )
+        df_con_area = df_papel_diput[df_papel_diput['_area_cod'].notna()].copy()
+
+        if df_con_area.empty:
+            st.info(
+                f"No hay facturas en papel con área asignada para esta entidad "
+                f"(total facturas en papel de DIPU: {len(df_papel_diput):,}, "
+                f"columna usada: '{_area_col}')."
+            )
+        else:
+            tabla_area = (
+                df_con_area.groupby('_area_cod')
+                .size()
+                .reset_index(name='Nº Facturas')
+                .rename(columns={'_area_cod': 'Área'})
+                .sort_values('Área')
+            )
+            total_row = pd.DataFrame([{'Área': 'TOTAL', 'Nº Facturas': int(tabla_area['Nº Facturas'].sum())}])
+            tabla_area_display = pd.concat([tabla_area, total_row], ignore_index=True)
+
+            def _html_tabla_area(df):
+                thead = """
+                <thead>
+                  <tr style="background:#1f4e79;color:white;text-align:center;">
+                    <th style="padding:8px;border:1px solid #888;text-align:left;">ÁREA</th>
+                    <th style="padding:8px;border:1px solid #888;">Nº FACTURAS EN PAPEL</th>
+                  </tr>
+                </thead>"""
+                rows = ""
+                for _, row in df.iterrows():
+                    bold = row['Área'] == 'TOTAL'
+                    fw = "font-weight:bold;" if bold else ""
+                    bg = "background:#dce6f1;" if bold else ""
+                    rows += (
+                        f'<tr style="{bg}">'
+                        f'<td style="padding:7px;border:1px solid #ddd;{fw}">{row["Área"]}</td>'
+                        f'<td style="padding:7px;border:1px solid #ddd;text-align:right;{fw}">{int(row["Nº Facturas"]):,}</td>'
+                        f'</tr>'
+                    )
+                return (
+                    '<table style="width:40%;border-collapse:collapse;font-size:14px;">'
+                    f'{thead}<tbody>{rows}</tbody></table>'
+                )
+
+            st.markdown(_html_tabla_area(tabla_area_display), unsafe_allow_html=True)
+
     st.markdown("---")
 
     # === RESUMEN PARA INFORME ===

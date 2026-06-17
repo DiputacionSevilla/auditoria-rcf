@@ -102,9 +102,12 @@ def analizar_rechazos(df_rcf: pd.DataFrame) -> Dict:
     else:
         por_motivo = pd.Series(dtype=int)
     
+    columnas_deseadas = ['entidad', 'id_fra_rcf', 'numero_factura', 'fecha_anotacion_rcf', 'importe_total']
+    columnas_presentes = [c for c in columnas_deseadas if c in rechazadas.columns]
+
     return {
         'total_rechazadas': len(rechazadas),
         'porcentaje': (len(rechazadas) / len(df_rcf) * 100) if len(df_rcf) > 0 else 0,
         'por_motivo': por_motivo.to_dict() if len(por_motivo) > 0 else {},
-        'facturas': rechazadas[['entidad', 'id_fra_rcf', 'numero_factura', 'fecha_anotacion_rcf', 'importe_total']].to_dict('records') if len(rechazadas) > 0 else []
+        'facturas': rechazadas[columnas_presentes].to_dict('records') if len(rechazadas) > 0 else []
     }

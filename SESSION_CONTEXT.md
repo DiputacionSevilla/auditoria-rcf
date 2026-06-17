@@ -1,4 +1,104 @@
-# Contexto de Trabajo - Sesión 05/02/2026 (Actualizado)
+# Contexto de Trabajo - Sesión 17/06/2026 (Actualizado)
+
+Este documento resume el progreso actual, los hallazgos técnicos y las decisiones de diseño tomadas para facilitar la continuidad del proyecto.
+
+## 🎯 Objetivo de la Sesión Actual
+Corregir errores detectados en ejecución y preparar el despliegue en Streamlit Cloud con datos por defecto del ejercicio 2025. **✅ COMPLETADO**
+
+## ✅ Mejoras Realizadas en Esta Sesión (17/06/2026)
+
+### 1. Corrección de error en gráfico de evolución mensual (`pages/3_Anotacion_RCF.py`)
+
+**Error:** `TypeError: unsupported operand type(s) for +: 'int' and 'str'` en `fig_ev.add_vline()`.
+
+**Causa:** Se pasaba a `add_vline` el nombre del mes (texto) cuando Plotly espera una posición numérica en el eje categórico.
+
+**Solución:** Se cambió el valor de `x` al índice numérico del mes (0-based):
+```python
+x=int(fecha_cambio.month) - 1
+```
+
+Archivo modificado: `pages/3_Anotacion_RCF.py` (línea 658).
+
+### 2. Corrección de `KeyError` en análisis de rechazos (`utils/validaciones.py`)
+
+**Error:** `KeyError: "['fecha_anotacion_rcf'] not in index"` en `analizar_rechazos()`.
+
+**Causa:** La función intentaba extraer siempre las columnas `['entidad', 'id_fra_rcf', 'numero_factura', 'fecha_anotacion_rcf', 'importe_total']`. Si el Excel no contenía `fecha_anotacion_rcf`, fallaba.
+
+**Solución:** Ahora se seleccionan solo las columnas realmente presentes en el DataFrame:
+```python
+columnas_deseadas = ['entidad', 'id_fra_rcf', 'numero_factura', 'fecha_anotacion_rcf', 'importe_total']
+columnas_presentes = [c for c in columnas_deseadas if c in rechazadas.columns]
+```
+
+Archivo modificado: `utils/validaciones.py` (líneas 105-112).
+
+### 3. Preparación para despliegue en Streamlit Cloud con datos por defecto (`app.py`)
+
+**Objetivo:** Que la aplicación abra directamente con los datos de 2025 cargados, pero permita al usuario subir otros archivos posteriormente.
+
+**Cambios en `app.py`:**
+- Se añadió autocarga automática si existen los 4 archivos Excel en `datos/`.
+- Se mantiene la opción de carga manual desde la barra lateral; los archivos subidos prevalecen sobre los por defecto.
+- Se muestra en la sidebar el origen de los datos activos ("datos por defecto" o "archivos subidos manualmente").
+- Se añadió manejo de `session_state` para evitar reintentos infinitos si la autocarga falla.
+
+**Archivos esperados en `datos/`:**
+| Clave | Archivo |
+|-------|---------|
+| RCF | `datos/ftras-RCF.xlsx` |
+| FACe | `datos/2-Ftras FACe.xlsx` |
+| Anulaciones | `datos/4-Anulacion de ftras.xlsx` |
+| Estados | `datos/5-Cambio de estado de facturas.xlsx` |
+
+### 4. Documentación de despliegue creada
+
+Se creó el archivo **`DESPLIEGUE_STREAMLIT_CLOUD.md`** con:
+- Resumen del cambio técnico en `app.py`.
+- Opciones para disponer los archivos Excel en la nube:
+  - Opción 1 (recomendada): bucket privado + Streamlit Secrets.
+  - Opción 2: repositorio privado + carpeta `datos/`.
+  - Opción 3: Git LFS para archivos grandes.
+- Pasos detallados para desplegar en Streamlit Cloud.
+- Recomendación según sensibilidad de los datos.
+
+### 5. Ajuste de nombres de archivos y estrategia de despliegue definida (continuación de sesión)
+
+**Decisión:** Se optó por la **Opción 2 (repositorio privado + carpeta `datos/`)** por simplicidad, dado que los archivos actuales suman ~4 MB y están por debajo de los límites de GitHub.
+
+**Problema detectado:** Los archivos reales en `datos/` no coincidían con los nombres esperados por `app.py`:
+- `ftras-RCF.xlsx` → `1-ftras-RCF.xlsx`
+- `4-Anulacion de ftras.xlsx` → `3-Anulacion de ftras.xlsx`
+- `5-Cambio de estado de facturas.xlsx` → `4-Cambio de estado de facturas.xlsx`
+
+**Solución:**
+- Se actualizó el diccionario `RUTAS_DEFAULT` en `app.py` para que apunte a los nombres reales.
+- Se actualizaron también las rutas en `diagnostico_retenidas.py` para mantener consistencia.
+- Se reescribió `DESPLIEGUE_STREAMLIT_CLOUD.md` para reflejar:
+  - Los nombres reales de los archivos.
+  - La estrategia elegida (repositorio privado + `datos/`).
+  - Los comandos `git add -f` correctos.
+  - Las alternativas de bucket privado y Git LFS.
+
+**Archivo modificado:** `app.py`, `diagnostico_retenidas.py`, `DESPLIEGUE_STREAMLIT_CLOUD.md`.
+
+---
+
+## 📋 Pendientes para Próximas Sesiones
+- [ ] Validar la consistencia final de los informes descargables (Excel) con las nuevas columnas.
+- [ ] Revisar si hay más estados que deban ser tratados con lógica especial de fechas nulas.
+- [x] ~~Ajustar el generador de informes PDF para reflejar los nuevos desgloses de métricas.~~ (COMPLETADO)
+- [x] ~~Corregir tiempos negativos en Anotación RCF~~ (COMPLETADO - formato de fechas corregido con dayfirst=True)
+- [ ] Probar la generación de informes con datos reales y verificar que todas las tablas se muestran correctamente.
+- [x] ~~Verificar que los tiempos de anotación sean coherentes tras la corrección.~~ (COMPLETADO - funcionando correctamente)
+- [x] ~~Decidir e implementar la estrategia definitiva de despliegue en Streamlit Cloud~~ (COMPLETADO - repositorio privado + carpeta `datos/`).
+- [ ] Realizar el despliegue real en Streamlit Cloud y verificar que la autocarga funciona.
+- [ ] Actualizar los datos de 2025 en el repositorio privado cuando estén definitivos.
+
+---
+
+# Contexto de Trabajo - Sesión 05/02/2026 (Histórico)
 
 Este documento resume el progreso actual, los hallazgos técnicos y las decisiones de diseño tomadas para facilitar la continuidad del proyecto.
 

@@ -24,10 +24,10 @@ def diagnostico():
     # Rutas de archivos
     datos_dir = Path("datos")
     archivos = {
-        'rcf': datos_dir / "ftras-RCF.xlsx",
+        'rcf': datos_dir / "1-ftras-RCF.xlsx",
         'face': datos_dir / "2-Ftras FACe.xlsx",
-        'anulaciones': datos_dir / "4-Anulacion de ftras.xlsx",
-        'estados': datos_dir / "5-Cambio de estado de facturas.xlsx"
+        'anulaciones': datos_dir / "3-Anulacion de ftras.xlsx",
+        'estados': datos_dir / "4-Cambio de estado de facturas.xlsx"
     }
 
     df_rcf = pd.read_excel(archivos['rcf'])

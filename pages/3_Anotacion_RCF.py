@@ -656,7 +656,7 @@ def main():
             marker_color=COLORES.get('exito', '#28A745')
         ))
         fig_ev.add_vline(
-            x=NOMBRES_MESES[fecha_cambio.month],
+            x=int(fecha_cambio.month) - 1,
             line_dash='dash', line_color='red',
             annotation_text=f'Cambio {fecha_cambio.strftime("%d/%m")}',
             annotation_position='top right'

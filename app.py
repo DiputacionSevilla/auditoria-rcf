@@ -43,39 +43,87 @@ st.markdown(f"""
     </style>
 """, unsafe_allow_html=True)
 
+# Configuración de rutas por defecto
+DATOS_DIR = Path("datos")
+RUTAS_DEFAULT = {
+    'rcf': DATOS_DIR / "1-ftras-RCF.xlsx",
+    'face': DATOS_DIR / "2-Ftras FACe.xlsx",
+    'anulaciones': DATOS_DIR / "3-Anulacion de ftras.xlsx",
+    'estados': DATOS_DIR / "4-Cambio de estado de facturas.xlsx"
+}
+
+
+def hay_datos_por_defecto() -> bool:
+    """Indica si existen los 4 archivos Excel por defecto en datos/."""
+    return all(ruta.exists() for ruta in RUTAS_DEFAULT.values())
+
+
+def procesar_archivos(archivo_rcf, archivo_face, archivo_anulaciones, archivo_estados, origen: str):
+    """Carga, valida y guarda los datos en session_state."""
+    with st.spinner("Procesando archivos..."):
+        try:
+            datos = cargar_datos(
+                archivo_rcf,
+                archivo_face,
+                archivo_anulaciones,
+                archivo_estados
+            )
+            validacion = validar_archivos(datos)
+
+            st.session_state['datos'] = datos
+            st.session_state['validacion'] = validacion
+            st.session_state['datos_procesados'] = True
+            st.session_state['origen_datos'] = origen
+
+            st.sidebar.success("✅ Datos procesados correctamente")
+            st.rerun()
+        except Exception as e:
+            st.sidebar.error(f"❌ Error al procesar: {str(e)}")
+
+
 def main():
     # Título principal
     st.title("🏛️ Sistema de Auditoría de Facturas Electrónicas")
     st.subheader("Registro Contable de Facturas (RCF) - Diputación de Sevilla")
-    
+
     st.markdown("---")
-    
-    # Información de bienvenida
-    st.info("""
-    **📋 Guía de uso:**
-    1. Carga los 4 archivos Excel requeridos en la barra lateral
-    2. La aplicación validará automáticamente los datos
-    3. Navega por las diferentes secciones usando el menú lateral
-    4. Genera el informe completo en la última sección
-    """)
-    
-    # Configuración de rutas por defecto
-    DATOS_DIR = Path("datos")
-    RUTAS_DEFAULT = {
-        'rcf': DATOS_DIR / "ftras-RCF.xlsx",
-        'face': DATOS_DIR / "2-Ftras FACe.xlsx",
-        'anulaciones': DATOS_DIR / "4-Anulacion de ftras.xlsx",
-        'estados': DATOS_DIR / "5-Cambio de estado de facturas.xlsx"
-    }
-    
+
     # Sidebar - Carga de archivos
     st.sidebar.title("📁 Gestión de Datos")
-    
+
+    usar_default = hay_datos_por_defecto()
+
+    # ------------------------------------------------------------------
+    # Autocarga de datos por defecto al iniciar la app
+    # ------------------------------------------------------------------
+    if usar_default and not st.session_state.get('datos_procesados'):
+        # Evitar intentar la autocarga más de una vez por sesión si falla
+        if 'intento_autocarga' not in st.session_state:
+            st.session_state['intento_autocarga'] = True
+            procesar_archivos(
+                RUTAS_DEFAULT['rcf'],
+                RUTAS_DEFAULT['face'],
+                RUTAS_DEFAULT['anulaciones'],
+                RUTAS_DEFAULT['estados'],
+                origen='default'
+            )
+            return  # La recarga se encargará del resto
+
+    # ------------------------------------------------------------------
+    # Indicador del origen de los datos activos
+    # ------------------------------------------------------------------
+    if st.session_state.get('datos_procesados'):
+        origen = st.session_state.get('origen_datos', 'manual')
+        if origen == 'default':
+            st.sidebar.success("🏠 Usando datos por defecto (2025)")
+        else:
+            st.sidebar.info("📤 Usando archivos subidos manualmente")
+
     def obtener_archivo_y_estado(clave, etiqueta, help_text):
         archivo_subido = st.sidebar.file_uploader(etiqueta, type=['xlsx'], help=help_text)
         ruta_local = RUTAS_DEFAULT[clave]
         existe_local = ruta_local.exists()
-        
+
         if archivo_subido:
             st.sidebar.caption(f"✅ Usando archivo subido: `{archivo_subido.name}`")
             return archivo_subido, True
@@ -87,59 +135,42 @@ def main():
             return None, False
 
     st.sidebar.markdown("### 1️⃣ Facturas RCF")
-    archivo_rcf, rcf_ok = obtener_archivo_y_estado('rcf', "Subir ftras-RCF.xlsx", "Archivo con todas las facturas del RCF")
-    
+    archivo_rcf, rcf_ok = obtener_archivo_y_estado('rcf', "Subir 1-ftras-RCF.xlsx", "Archivo con todas las facturas del RCF")
+
     st.sidebar.markdown("### 2️⃣ Facturas FACe")
     archivo_face, face_ok = obtener_archivo_y_estado('face', "Subir Facturas FACe", "Facturas registradas en la plataforma FACe")
-    
+
     st.sidebar.markdown("### 3️⃣ Anulaciones")
     archivo_anulaciones, anul_ok = obtener_archivo_y_estado('anulaciones', "Subir Anulaciones", "Solicitudes de anulación de facturas")
-    
+
     st.sidebar.markdown("### 4️⃣ Cambios de Estado")
     archivo_estados, est_ok = obtener_archivo_y_estado('estados', "Subir Cambios de Estado", "Histórico de cambios de estado de facturas")
-    
+
     # Verificar si tenemos todos los archivos (ya sean locales o subidos)
     todos_disponibles = all([rcf_ok, face_ok, anul_ok, est_ok])
-    
+
     st.sidebar.markdown("---")
-    
-    # Botón para procesar / inicializar
+
+    # Botones de acción
     col_btn1, col_btn2 = st.sidebar.columns(2)
-    
+
     with col_btn1:
         btn_procesar = st.button("🔄 Procesar Datos", type="primary", width="stretch", disabled=not todos_disponibles)
-    
+
     with col_btn2:
         if st.button("🗑️ Inicializar", width="stretch", help="Limpia los datos cargados en memoria y vuelve al estado inicial"):
-            for key in ['datos', 'validacion', 'datos_procesados']:
+            for key in ['datos', 'validacion', 'datos_procesados', 'origen_datos', 'intento_autocarga']:
                 if key in st.session_state:
                     del st.session_state[key]
             st.rerun()
 
     if btn_procesar:
-        with st.spinner("Procesando archivos..."):
-            try:
-                # Cargar datos
-                datos = cargar_datos(
-                    archivo_rcf,
-                    archivo_face,
-                    archivo_anulaciones,
-                    archivo_estados
-                )
-                
-                # Validar archivos
-                validacion = validar_archivos(datos)
-                
-                # Guardar en session_state
-                st.session_state['datos'] = datos
-                st.session_state['validacion'] = validacion
-                st.session_state['datos_procesados'] = True
-                
-                st.sidebar.success("✅ Datos procesados correctamente")
-                st.rerun()
-                
-            except Exception as e:
-                st.sidebar.error(f"❌ Error al procesar: {str(e)}")
+        # Si el usuario sube archivos, prevalecen sobre los por defecto
+        archivos_subidos = [
+            archivo_rcf, archivo_face, archivo_anulaciones, archivo_estados
+        ]
+        origen = 'manual' if any(hasattr(a, 'read') for a in archivos_subidos) else 'default'
+        procesar_archivos(archivo_rcf, archivo_face, archivo_anulaciones, archivo_estados, origen=origen)
     
     # Contenido principal
     if 'datos_procesados' in st.session_state and st.session_state['datos_procesados']:
@@ -182,10 +213,10 @@ def mostrar_informacion_inicial():
     st.markdown("""
     | Archivo | Descripción | Campos principales |
     |---------|-------------|-------------------|
-    | **ftras-RCF.xlsx** | Facturas del RCF | ID_FACE, fecha_emision, importe, NIF, OC/OG/UT |
-    | **Facturas FACe** | Registro FACe | registro, fecha_registro, nif_emisor, importe |
-    | **Anulaciones** | Solicitudes anulación | registro, fecha_solicitud, comentario |
-    | **Estados** | Histórico estados | registro, codigo_estado, fecha_cambio |
+    | **1-ftras-RCF.xlsx** | Facturas del RCF | ID_FACE, fecha_emision, importe, NIF, OC/OG/UT |
+    | **2-Ftras FACe.xlsx** | Registro FACe | registro, fecha_registro, nif_emisor, importe |
+    | **3-Anulacion de ftras.xlsx** | Solicitudes anulación | registro, fecha_solicitud, comentario |
+    | **4-Cambio de estado de facturas.xlsx** | Histórico estados | registro, codigo_estado, fecha_cambio |
     """)
     
     st.info("💡 **Nota**: Las facturas en papel se identifican por tener el campo ID_FACE vacío")
