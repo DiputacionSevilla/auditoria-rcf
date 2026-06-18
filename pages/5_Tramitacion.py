@@ -277,7 +277,7 @@ def main():
     if len(df_estados) > 0:
         # Obtener secuencias de estados por factura
         df_estados_seq = df_estados_sorted.groupby('registro')['nombre_estado'].apply(list).reset_index()
-        df_estados_seq['secuencia'] = df_estados_seq['nombre_estado'].apply(lambda x: ' → '.join(x[:5]))  # Primeros 5 estados
+        df_estados_seq['secuencia'] = df_estados_seq['nombre_estado'].apply(lambda x: ' → '.join(x))
         
         # Top 10 secuencias
         top_secuencias = df_estados_seq['secuencia'].value_counts().head(10)
