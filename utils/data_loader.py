@@ -245,10 +245,10 @@ def cargar_datos(archivo_rcf, archivo_face, archivo_anulaciones, archivo_estados
             # Filtrar Anulaciones por año de solicitud
             if 'fecha_solicitud_anulacion' in df_anulaciones.columns:
                 df_anulaciones = df_anulaciones[df_anulaciones['fecha_solicitud_anulacion'].dt.year == int(ejercicio_auditado)].copy()
-                
-            # Filtrar Estados por año de inserción (si aplica) o por registros vinculados al RCF actual
-            if 'insertado' in df_estados.columns:
-                df_estados = df_estados[df_estados['insertado'].dt.year == int(ejercicio_auditado)].copy()
+
+            # Estados NO se filtra por año de inserción: una factura del ejercicio auditado
+            # puede completar su tramitación (p.ej. Pagada) ya en el año siguiente, y filtrar
+            # por año truncaba su secuencia de estados en Tramitación.
         else:
             ids_face_en_rcf_total = set(df_rcf[df_rcf['ID_FACE'].notna()]['ID_FACE'].astype(str))
         
