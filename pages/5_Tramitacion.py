@@ -280,10 +280,20 @@ def main():
         df_estados_seq['secuencia'] = df_estados_seq['nombre_estado'].apply(lambda x: ' → '.join(x))
         
         # Top 10 secuencias
-        top_secuencias = df_estados_seq['secuencia'].value_counts().head(10)
-        
+        conteo_secuencias = df_estados_seq['secuencia'].value_counts()
+        top_secuencias = conteo_secuencias.head(10)
+
         df_secuencias_display = top_secuencias.reset_index()
         df_secuencias_display.columns = ['Secuencia de Estados', 'Cantidad de Facturas']
+
+        # Agrupar el resto de secuencias (menos frecuentes) en una fila "Otras"
+        resto_facturas = len(df_estados_seq) - df_secuencias_display['Cantidad de Facturas'].sum()
+        if resto_facturas > 0:
+            otras_secuencias = len(conteo_secuencias) - len(top_secuencias)
+            df_secuencias_display.loc[len(df_secuencias_display)] = [
+                f'Otras secuencias ({otras_secuencias} distintas)', resto_facturas
+            ]
+
         df_secuencias_display['Porcentaje'] = (
             df_secuencias_display['Cantidad de Facturas'] / len(df_estados_seq) * 100
         ).round(2)
