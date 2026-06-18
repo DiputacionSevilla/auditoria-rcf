@@ -275,10 +275,68 @@ def main():
     st.info("Secuencias más frecuentes de cambios de estado")
     
     if len(df_estados) > 0:
-        # Obtener secuencias de estados por factura
-        df_estados_seq = df_estados_sorted.groupby('registro')['nombre_estado'].apply(list).reset_index()
+        # Detectar retrocesos de estado: cuando una factura vuelve a un código de
+        # estado anterior al máximo ya alcanzado (típico de una modificación en el RCF)
+        df_estados_sorted['codigo_num'] = pd.to_numeric(
+            df_estados_sorted['codigo'].astype(str).str.split('.').str[0], errors='coerce'
+        )
+        df_estados_sorted['cummax_codigo'] = df_estados_sorted.groupby('registro')['codigo_num'].cummax()
+        df_estados_sorted['max_previo'] = df_estados_sorted.groupby('registro')['cummax_codigo'].shift(1)
+
+        # Fecha en la que se alcanzó ese máximo previo (para medir la cercanía temporal)
+        df_estados_sorted['tiempo_max_codigo'] = df_estados_sorted['insertado'].where(
+            df_estados_sorted['codigo_num'] == df_estados_sorted['cummax_codigo']
+        )
+        df_estados_sorted['tiempo_max_codigo'] = df_estados_sorted.groupby('registro')['tiempo_max_codigo'].ffill()
+        df_estados_sorted['tiempo_max_previo'] = df_estados_sorted.groupby('registro')['tiempo_max_codigo'].shift(1)
+        diff_segundos = (df_estados_sorted['insertado'] - df_estados_sorted['tiempo_max_previo']).dt.total_seconds()
+
+        es_retroceso_bruto = df_estados_sorted['codigo_num'] < df_estados_sorted['max_previo']
+
+        # 2100 (Recibida en destino) y 1400 (Verificada en RCF) se generan de forma
+        # prácticamente simultánea: si la diferencia es de 10 segundos o menos se
+        # ignora como retroceso real (es un artefacto de orden de inserción)
+        es_caso_simultaneo_2100_1400 = (
+            (df_estados_sorted['max_previo'] == 2100) &
+            (df_estados_sorted['codigo_num'] == 1400) &
+            (diff_segundos <= 10)
+        ).fillna(False)
+
+        df_estados_sorted['es_retroceso'] = es_retroceso_bruto & ~es_caso_simultaneo_2100_1400
+
+        n_facturas_con_retroceso = df_estados_sorted.loc[df_estados_sorted['es_retroceso'], 'registro'].nunique()
+        n_retrocesos_total = int(df_estados_sorted['es_retroceso'].sum())
+        n_facturas_total_estados = df_estados_sorted['registro'].nunique()
+        porc_retroceso = (n_facturas_con_retroceso / n_facturas_total_estados * 100) if n_facturas_total_estados else 0
+
+        st.metric(
+            "🔁 Facturas con retroceso de estado",
+            f"{n_facturas_con_retroceso:,}",
+            f"{porc_retroceso:.1f}% del total"
+        )
+        st.caption(
+            f"Se han depurado {n_retrocesos_total:,} cambio(s) de estado que suponían un retroceso "
+            "(la factura volvió a un estado anterior al máximo ya alcanzado, típicamente por una "
+            "modificación en el RCF) antes de calcular la secuencia de tramitación. El par "
+            "2100→1400 (Recibida en destino / Verificada en RCF) se genera de forma prácticamente "
+            "simultánea y no se cuenta como retroceso cuando la diferencia es de 10 segundos o menos."
+        )
+
+        # Obtener secuencias de estados por factura, descartando los retrocesos y
+        # colapsando repeticiones consecutivas para que el flujo sea coherente
+        df_estados_limpio = df_estados_sorted[~df_estados_sorted['es_retroceso']]
+
+        def _dedupe_consecutivos(lista):
+            resultado = []
+            for estado in lista:
+                if not resultado or resultado[-1] != estado:
+                    resultado.append(estado)
+            return resultado
+
+        df_estados_seq = df_estados_limpio.groupby('registro')['nombre_estado'].apply(list).reset_index()
+        df_estados_seq['nombre_estado'] = df_estados_seq['nombre_estado'].apply(_dedupe_consecutivos)
         df_estados_seq['secuencia'] = df_estados_seq['nombre_estado'].apply(lambda x: ' → '.join(x))
-        
+
         # Top 10 secuencias
         conteo_secuencias = df_estados_seq['secuencia'].value_counts()
         top_secuencias = conteo_secuencias.head(10)
@@ -306,9 +364,29 @@ def main():
             width="stretch",
             hide_index=True
         )
-    
+
+        # Detalle de los retrocesos detectados, para revisión individual
+        if n_facturas_con_retroceso > 0:
+            with st.expander(f"🔁 Detalle de retrocesos de estado ({n_retrocesos_total} cambios en {n_facturas_con_retroceso} facturas)"):
+                df_retrocesos_detalle = df_estados_sorted.loc[
+                    df_estados_sorted['es_retroceso'],
+                    ['registro', 'insertado', 'codigo', 'nombre_estado', 'max_previo']
+                ].copy()
+                df_retrocesos_detalle.columns = [
+                    'Registro FACe', 'Fecha cambio', 'Código estado', 'Estado', 'Código máximo previo'
+                ]
+                st.dataframe(df_retrocesos_detalle, width="stretch", hide_index=True)
+
+                excel_retrocesos = exportar_a_excel(df_retrocesos_detalle, 'Retrocesos_Estado')
+                st.download_button(
+                    "📥 Exportar retrocesos de estado",
+                    data=excel_retrocesos,
+                    file_name='retrocesos_estado.xlsx',
+                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                )
+
     st.markdown("---")
-    
+
     # === RECONOCIMIENTO DE OBLIGACIÓN Y PAGO ===
     st.markdown("### 💰 Reconocimiento de Obligación y Pagos")
     
